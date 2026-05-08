@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ExcelIO/ExcelIO.csproj" />
+  <Project Path="ExcelIO.Test/ExcelIO.Test.csproj" />
+</Solution>
