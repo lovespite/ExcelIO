@@ -28,13 +28,13 @@ public static class XlHelper
     public static Task SaveAsync(string filepath, XlWorkbook workbookData)
         => Task.Run(() => Save(filepath, workbookData));
 
-    public static Task<XlWorkbook> LoadAsync(string filepath)
-        => Task.Run(() => Load(filepath));
+    public static Task<XlWorkbook> LoadAsync(string filepath, XlLoadOptions? options = null)
+        => Task.Run(() => Load(filepath, options));
 
-    public static async Task<XlWorkbook> LoadAsync(Stream stream, string extension)
+    public static async Task<XlWorkbook> LoadAsync(Stream stream, string extension, XlLoadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        return LoadByExtension(stream, extension);
+        return LoadByExtension(stream, extension, options);
     }
 
     /// <summary>
@@ -115,61 +115,30 @@ public static class XlHelper
         }
     }
 
-    /// <summary>
-    /// Loads an Excel workbook from the specified file path, automatically detecting the file format based on the file
-    /// extension.
-    /// </summary>
-    /// <remarks>The method supports both legacy .xls and modern .xlsx/.xlsm formats. The file format is
-    /// determined by the file extension. The file is opened with shared read access, allowing other processes to read
-    /// or write to the file concurrently.</remarks>
-    /// <param name="filepath">The path to the Excel file to load. The file must exist and be accessible for reading. Cannot be null, empty, or
-    /// consist only of white-space characters.</param>
-    /// <returns>An <see cref="XlWorkbook"/> instance representing the contents of the loaded Excel file.</returns>
-    public static XlWorkbook Load(string filepath)
+    public static XlWorkbook Load(string filepath, XlLoadOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filepath);
         using var fs = new FileStream(filepath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        return LoadByExtension(fs, filepath);
+        return LoadByExtension(fs, filepath, options);
     }
 
-    /// <summary>
-    /// Loads an Excel workbook from the specified stream, using the provided file extension to determine the file
-    /// format.
-    /// </summary>
-    /// <remarks>The method determines the Excel file format based on the provided extension and parses the
-    /// stream accordingly. The caller is responsible for managing the lifetime of the input stream.</remarks>
-    /// <param name="stream">The stream containing the Excel file data to load. Cannot be null and must be readable and seekable.</param>
-    /// <param name="extension">The file extension that indicates the format of the Excel file (for example, ".xls" or ".xlsx"). Used to select
-    /// the appropriate parser.</param>
-    /// <returns>An instance of <see cref="XlWorkbook"/> representing the loaded workbook.</returns>
-    public static XlWorkbook Load(Stream stream)
+    public static XlWorkbook Load(Stream stream, XlLoadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        return LoadBySignature(stream);
+        return LoadBySignature(stream, options);
     }
 
-    /// <summary>
-    /// Loads an Excel workbook from the specified stream using the given file format.
-    /// </summary>
-    /// <remarks>The caller is responsible for managing the lifetime of the provided stream. The method
-    /// supports both OpenXML (.xlsx, .xlsm) and legacy binary (.xls) Excel formats, as determined by the format
-    /// parameter.</remarks>
-    /// <param name="stream">The stream containing the Excel file data to load. The stream must be readable and positioned at the start of
-    /// the file.</param>
-    /// <param name="format">The format of the Excel file to load. Specifies how the stream should be interpreted.</param>
-    /// <returns>An XlWorkbook representing the contents of the loaded Excel file.</returns>
-    public static XlWorkbook Load(Stream stream, ExcelFormat format)
+    public static XlWorkbook Load(Stream stream, ExcelFormat format, XlLoadOptions? options = null)
     {
         return format switch
         {
-            ExcelFormat.OpenXmlZip => LoadOpenXml(stream),
-            ExcelFormat.Cfb => LoadByExtension(stream, ".xls"),
-            _ => LoadBySignature(stream),
+            ExcelFormat.OpenXmlZip => LoadOpenXml(stream, options),
+            ExcelFormat.Cfb => LoadByExtension(stream, ".xls", options),
+            _ => LoadBySignature(stream, options),
         };
     }
 
-
-    private static XlWorkbook LoadByExtension(Stream stream, string extension)
+    private static XlWorkbook LoadByExtension(Stream stream, string extension, XlLoadOptions? options = null)
     {
         if (IsXlsFile(extension))
         {
@@ -182,10 +151,10 @@ public static class XlHelper
             throw new NotSupportedException($"Unsupported Excel format: {Path.GetExtension(extension)}");
         }
 
-        return LoadOpenXml(stream);
+        return LoadOpenXml(stream, options);
     }
 
-    private static XlWorkbook LoadBySignature(Stream stream)
+    private static XlWorkbook LoadBySignature(Stream stream, XlLoadOptions? options = null)
     {
         byte[] header = new byte[8];
         int bytesRead = stream.Read(header, 0, header.Length);
@@ -203,7 +172,7 @@ public static class XlHelper
         try
         {
             stream.Seek(0, SeekOrigin.Begin);
-            return Load(stream, format);
+            return Load(stream, format, options);
         }
         catch (NotSupportedException)
         {
@@ -211,35 +180,35 @@ public static class XlHelper
             ms.Write(header, 0, bytesRead);
             stream.CopyTo(ms);
             ms.Seek(0, SeekOrigin.Begin);
-            return Load(ms, format);
+            return Load(ms, format, options);
         }
     }
 
-    private static XlWorkbook LoadOpenXml(Stream stream)
+    private static XlWorkbook LoadOpenXml(Stream stream, XlLoadOptions? options = null)
     {
+        options ??= XlLoadOptions.Default;
         var result = new XlWorkbook();
 
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
 
-        // 1. 读取 SharedStrings (共享字符串表)
-        // Excel 为了压缩体积，把重复的字符串放在一个表里，单元格里存索引
+        // 1. 读取 SharedStrings
         var sharedStrings = new List<string>();
         var sharedStringEntry = archive.GetEntry("xl/sharedStrings.xml");
         if (sharedStringEntry != null)
         {
             using var entryStream = sharedStringEntry.Open();
             var doc = XDocument.Load(entryStream);
-            // <si><t>Value</t></si>
             foreach (var si in doc.Descendants(XName.Get("si", NsMain)))
             {
-                // 有时候文本在 <t> 中，有时候在 <r><t> 中 (Rich Text)
                 var val = si.DescendantNodes().OfType<XText>().Select(x => x.Value).Aggregate(new StringBuilder(), (sb, v) => sb.Append(v)).ToString();
                 sharedStrings.Add(val);
             }
         }
 
-        // 2. 读取 Workbook (获取 Sheet 名称和 ID 的对应关系)
-        // 结构: <sheet name="Sheet1" sheetId="1" r:id="rId1" />
+        // 2. 读取 Styles
+        var styles = options.LoadStyles ? XlsxStyleReader.ReadStyles(archive) : [new XlStyle()];
+
+        // 3. 读取 Workbook
         var sheetMapping = new List<(string Name, string RelId)>();
         var workbookEntry = archive.GetEntry("xl/workbook.xml");
         if (workbookEntry != null)
@@ -250,7 +219,7 @@ public static class XlHelper
             foreach (var sheet in sheets)
             {
                 var name = sheet.Attribute("name")?.Value ?? "Unknown";
-                var rid = sheet.Attribute(XName.Get("id", NsRel))?.Value; // r:id
+                var rid = sheet.Attribute(XName.Get("id", NsRel))?.Value;
                 if (rid != null)
                 {
                     sheetMapping.Add((name, rid));
@@ -258,8 +227,7 @@ public static class XlHelper
             }
         }
 
-        // 3. 解析 Workbook 关系文件，找到 rId 对应的文件名
-        // 结构: <Relationship Id="rId1" Target="worksheets/sheet1.xml" />
+        // 4. 解析 Workbook 关系文件
         var relMapping = new Dictionary<string, string>();
         var relEntry = archive.GetEntry("xl/_rels/workbook.xml.rels");
         if (relEntry != null)
@@ -277,105 +245,236 @@ public static class XlHelper
             }
         }
 
-        // 4. 遍历并读取每个 Sheet 的数据
+        // 5. 遍历并读取每个 Sheet 的数据
         foreach (var (sheetName, rid) in sheetMapping)
         {
             if (!relMapping.TryGetValue(rid, out var targetPath)) continue;
 
-            // 处理路径差异 (有时候是绝对路径，有时候是相对路径)
-            // 简单处理：如果不是以 xl/ 开头，就拼上去
             string entryPath = targetPath.StartsWith("/") ? targetPath.TrimStart('/') : $"xl/{targetPath}";
-            // 如果 Target 是 "worksheets/sheet1.xml"，在 zip 里通常是 "xl/worksheets/sheet1.xml"
             if (!entryPath.StartsWith("xl/")) entryPath = "xl/" + entryPath;
 
             var sheetEntry = archive.GetEntry(entryPath);
-            // 容错：有些工具生成的路径可能不同，尝试直接用 Target
             if (sheetEntry == null) sheetEntry = archive.GetEntry(targetPath);
-
             if (sheetEntry == null) continue;
 
             var ws = new XlWorksheet(result) { Name = sheetName };
             result.Worksheets.Add(ws);
 
-            using var entryStream = sheetEntry.Open();
-            using var reader = XmlReader.Create(entryStream);
+            string? drawingRid = null;
 
-            XlRow? currentRow = null;
-            int currentRowIndex = -1;
-
-            while (reader.Read())
+            using (var entryStream = sheetEntry.Open())
+            using (var reader = XmlReader.Create(entryStream))
             {
-                // <row r="1">
-                if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "row")
+                while (reader.Read())
                 {
-                    var rIndexAttr = reader.GetAttribute("r");
-                    if (int.TryParse(rIndexAttr, out int rIndex))
+                    if (reader.NodeType == XmlNodeType.Element)
                     {
-                        // Excel 索引从 1 开始
-                        rIndex -= 1;
-                        // 填充空行
-                        while (ws.Rows.Count < rIndex)
+                        if (reader.LocalName == "tabColor")
                         {
-                            ws.Rows.Add(new XlRow(ws));
+                            ws.Options.TabColor = reader.GetAttribute("rgb");
                         }
-                        currentRow = new XlRow(ws);
-                        ws.Rows.Add(currentRow);
-                        currentRowIndex = rIndex;
-                    }
-                }
-                // <c r="A1" t="s">
-                else if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "c")
-                {
-                    if (currentRow == null) continue;
-
-                    var type = reader.GetAttribute("t"); // 类型: s=sharedString, str=string, inlineStr=inline
-
-                    // 读取值 <v> 或 <t>
-                    // 简单的读取逻辑：读取子树文本
-                    // 注意：这里需要根据 type 来判断如何解析
-                    string cellValue = string.Empty;
-
-                    // 为了性能，我们手动 Read 到下一个元素
-                    // 这是一个简化的 XML 解析，只针对简单的 Excel 结构
-                    while (reader.Read())
-                    {
-                        if (reader.NodeType == XmlNodeType.Element)
+                        else if (reader.LocalName == "sheetView")
                         {
-                            if (reader.LocalName == "v") // Value
+                            var showGrid = reader.GetAttribute("showGridLines");
+                            if (showGrid == "0") ws.Options.ShowGridLines = false;
+                        }
+                        else if (reader.LocalName == "sheetFormatPr")
+                        {
+                            var defHeight = reader.GetAttribute("defaultRowHeight");
+                            if (double.TryParse(defHeight, out var h)) ws.Options.DefaultRowHeight = h;
+                        }
+                        else if (reader.LocalName == "col")
+                        {
+                            var min = int.Parse(reader.GetAttribute("min") ?? "1") - 1;
+                            var max = int.Parse(reader.GetAttribute("max") ?? "1") - 1;
+                            var width = reader.GetAttribute("width");
+                            var hidden = reader.GetAttribute("hidden") == "1";
+                            var styleIdxStr = reader.GetAttribute("style");
+                            
+                            for (int c = min; c <= max; c++)
                             {
-                                var raw = reader.ReadElementContentAsString();
-                                if (type == "s" && int.TryParse(raw, out int idx) && idx < sharedStrings.Count)
-                                {
-                                    cellValue = sharedStrings[idx];
-                                }
-                                else if (type == "b") // boolean
-                                {
-                                    cellValue = raw == "1" ? "TRUE" : "FALSE";
-                                }
-                                else
-                                {
-                                    cellValue = raw;
-                                }
-                                break;
-                            }
-                            else if (reader.LocalName == "t") // Inline Text
-                            {
-                                cellValue = reader.ReadElementContentAsString();
-                                break;
+                                var col = new XlColumn { Hidden = hidden };
+                                if (double.TryParse(width, out var w)) col.Width = w;
+                                if (options.LoadStyles && int.TryParse(styleIdxStr, out var sIdx) && sIdx < styles.Count) col.Style = styles[sIdx];
+                                ws.Columns[c] = col;
                             }
                         }
-                        else if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "c")
+                        else if (reader.LocalName == "row")
                         {
-                            break;
+                            var rIndexAttr = reader.GetAttribute("r");
+                            if (int.TryParse(rIndexAttr, out int rIndex))
+                            {
+                                rIndex -= 1;
+                                while (ws.Rows.Count < rIndex) ws.Rows.Add(new XlRow(ws));
+                                
+                                var row = new XlRow(ws);
+                                ws.Rows.Add(row);
+
+                                var ht = reader.GetAttribute("ht");
+                                if (double.TryParse(ht, out var h)) row.Height = h;
+                                row.Hidden = reader.GetAttribute("hidden") == "1";
+                                
+                                if (options.LoadStyles)
+                                {
+                                    var sIdxStr = reader.GetAttribute("s");
+                                    if (int.TryParse(sIdxStr, out var sIdx) && sIdx < styles.Count) row.Style = styles[sIdx];
+                                }
+                            }
+                        }
+                        else if (reader.LocalName == "c")
+                        {
+                            var currentRow = ws.Rows.LastOrDefault();
+                            if (currentRow == null) continue;
+
+                            var type = reader.GetAttribute("t");
+                            var sIdxStr = reader.GetAttribute("s");
+                            XlStyle? cellStyle = null;
+                            if (options.LoadStyles && int.TryParse(sIdxStr, out var sIdx) && sIdx < styles.Count) cellStyle = styles[sIdx];
+
+                            string cellValue = string.Empty;
+                            using (var subReader = reader.ReadSubtree())
+                            {
+                                while (subReader.Read())
+                                {
+                                    if (subReader.NodeType == XmlNodeType.Element)
+                                    {
+                                        if (subReader.LocalName == "v")
+                                        {
+                                            var raw = subReader.ReadElementContentAsString();
+                                            if (type == "s" && int.TryParse(raw, out int idx) && idx < sharedStrings.Count)
+                                                cellValue = sharedStrings[idx];
+                                            else if (type == "b")
+                                                cellValue = raw == "1" ? "TRUE" : "FALSE";
+                                            else
+                                                cellValue = raw;
+                                        }
+                                        else if (subReader.LocalName == "t")
+                                        {
+                                            cellValue = subReader.ReadElementContentAsString();
+                                        }
+                                    }
+                                }
+                            }
+                            currentRow.Cells.Add(new XlCell(currentRow) { Value = cellValue, Style = cellStyle });
+                        }
+                        else if (reader.LocalName == "drawing")
+                        {
+                            if (options.LoadImages)
+                            {
+                                drawingRid = reader.GetAttribute("id", NsRel);
+                                if (drawingRid == null) drawingRid = reader.GetAttribute("r:id");
+                            }
                         }
                     }
-
-                    currentRow.Cells.Add(new XlCell(currentRow) { Value = cellValue });
                 }
+            }
+
+            // 6. 读取 Images
+            if (options.LoadImages && drawingRid != null)
+            {
+                ReadSheetImages(archive, entryPath, drawingRid, ws);
             }
         }
 
         return result;
+    }
+
+    private static void ReadSheetImages(ZipArchive archive, string sheetPath, string drawingRid, XlWorksheet ws)
+    {
+        // 1. Find drawing path from sheet rels
+        var sheetDir = Path.GetDirectoryName(sheetPath)?.Replace("\\", "/") ?? "";
+        if (string.IsNullOrEmpty(sheetDir)) sheetDir = ".";
+        var relPath = $"{sheetDir}/_rels/{Path.GetFileName(sheetPath)}.rels";
+        var relEntry = archive.GetEntry(relPath);
+        if (relEntry == null) return;
+
+        string? drawingPath = null;
+        using (var stream = relEntry.Open())
+        {
+            var doc = XDocument.Load(stream);
+            var rel = doc.Descendants(XName.Get("Relationship", NsPkgRel))
+                         .FirstOrDefault(r => r.Attribute("Id")?.Value == drawingRid);
+            drawingPath = rel?.Attribute("Target")?.Value;
+        }
+
+        if (drawingPath == null) return;
+        
+        // Resolve Target relative to sheetDir
+        if (drawingPath.StartsWith("/")) 
+            drawingPath = drawingPath.TrimStart('/');
+        else if (!drawingPath.StartsWith("xl/"))
+        {
+            var baseUri = new Uri("file:///xl/worksheets/sheet.xml");
+            if (sheetPath.StartsWith("xl/")) baseUri = new Uri("file:///" + sheetPath);
+            var targetUri = new Uri(baseUri, drawingPath);
+            drawingPath = targetUri.AbsolutePath.TrimStart('/');
+        }
+
+        var drawingEntry = archive.GetEntry(drawingPath);
+        if (drawingEntry == null) return;
+
+        // 2. Find drawing relationships
+        var drawingDir = Path.GetDirectoryName(drawingPath)?.Replace("\\", "/") ?? "";
+        if (string.IsNullOrEmpty(drawingDir)) drawingDir = ".";
+        var drawingRelPath = $"{drawingDir}/_rels/{Path.GetFileName(drawingPath)}.rels";
+        var drawingRelEntry = archive.GetEntry(drawingRelPath);
+        var imgRelMap = new Dictionary<string, string>();
+        if (drawingRelEntry != null)
+        {
+            using var stream = drawingRelEntry.Open();
+            var doc = XDocument.Load(stream);
+            foreach (var rel in doc.Descendants(XName.Get("Relationship", NsPkgRel)))
+            {
+                var id = rel.Attribute("Id")?.Value;
+                var target = rel.Attribute("Target")?.Value;
+                if (id != null && target != null) imgRelMap[id] = target;
+            }
+        }
+
+        // 3. Parse Drawing XML
+        using (var stream = drawingEntry.Open())
+        {
+            var doc = XDocument.Load(stream);
+            var nsDr = XNamespace.Get("http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing");
+            var nsA = XNamespace.Get("http://schemas.openxmlformats.org/drawingml/2006/main");
+            var nsR = XNamespace.Get(NsRel);
+
+            foreach (var anchor in doc.Descendants(nsDr + "twoCellAnchor"))
+            {
+                var from = anchor.Element(nsDr + "from");
+                var to = anchor.Element(nsDr + "to");
+                if (from == null || to == null) continue;
+
+                int fromCol = int.Parse(from.Element(nsDr + "col")?.Value ?? "0");
+                int fromRow = int.Parse(from.Element(nsDr + "row")?.Value ?? "0");
+                int toCol = int.Parse(to.Element(nsDr + "col")?.Value ?? "0");
+                int toRow = int.Parse(to.Element(nsDr + "row")?.Value ?? "0");
+
+                var blip = anchor.Descendants(nsA + "blip").FirstOrDefault();
+                var embedId = blip?.Attribute(nsR + "embed")?.Value;
+                if (embedId != null && imgRelMap.TryGetValue(embedId, out var imgPath))
+                {
+                    string fullImgPath;
+                    if (imgPath.StartsWith("/"))
+                        fullImgPath = imgPath.TrimStart('/');
+                    else
+                    {
+                        var baseUri = new Uri("file:///" + drawingPath);
+                        var targetUri = new Uri(baseUri, imgPath);
+                        fullImgPath = targetUri.AbsolutePath.TrimStart('/');
+                    }
+                    
+                    var imgEntry = archive.GetEntry(fullImgPath);
+                    if (imgEntry != null)
+                    {
+                        using var imgStream = imgEntry.Open();
+                        using var ms = new MemoryStream();
+                        imgStream.CopyTo(ms);
+                        ws.AddImage(ms.ToArray(), Path.GetExtension(fullImgPath), fromRow, fromCol, toRow - fromRow, toCol - fromCol);
+                    }
+                }
+            }
+        }
     }
 
     private static ExcelFormat DetectFormatFromHeader(ReadOnlySpan<byte> bytes)

@@ -53,5 +53,92 @@ public class XlStyleTests
         XlHelper.Save(outputPath, wb);
 
         Assert.True(File.Exists(outputPath));
+
+        // Round-trip verification
+        var loadedWb = XlHelper.Load(outputPath);
+        var loadedWs = loadedWb.Worksheets[0];
+
+        Assert.Equal("StyleTest", loadedWs.Name);
+        Assert.Equal("FFFF0000", loadedWs.Options.TabColor);
+        Assert.False(loadedWs.Options.ShowGridLines);
+        Assert.Equal(30, loadedWs.Options.DefaultRowHeight);
+
+        Assert.Equal(20, loadedWs.Columns[0].Width);
+        Assert.Equal(30, loadedWs.Columns[1].Width);
+        Assert.Equal("FF00FF00", loadedWs.Columns[1].Style?.FillColor);
+        Assert.True(loadedWs.Columns[2].Hidden);
+
+        Assert.Equal(40, loadedWs.Rows[0].Height);
+        Assert.True(loadedWs.Rows[0].Style?.Bold);
+        Assert.Equal(14, loadedWs.Rows[0].Style?.FontSize);
+        Assert.Equal("FFFFFFFF", loadedWs.Rows[0].Style?.FontColor);
+        Assert.Equal("FF0000FF", loadedWs.Rows[0].Style?.FillColor);
+        Assert.Equal(XlHorizontalAlignment.Center, loadedWs.Rows[0].Style?.Alignment?.Horizontal);
+
+        Assert.Equal("Override Row Style", loadedWs.Rows[1].Cells[0].Value);
+        Assert.False(loadedWs.Rows[1].Cells[0].Style?.Bold);
+        Assert.Equal("FFFF0000", loadedWs.Rows[1].Cells[0].Style?.FontColor);
+
+        Assert.True(loadedWs.Rows[2].Hidden);
+
+        Assert.Equal(XlBorderStyle.Thick, loadedWs.Rows[3].Cells[0].Style?.Border?.Bottom);
+        Assert.Equal("FFFF0000", loadedWs.Rows[3].Cells[0].Style?.Border?.BottomColor);
+    }
+
+    [Fact]
+    public void TestXlsxImageRoundTrip()
+    {
+        var wb = new XlWorkbook();
+        var ws = wb.NewWorksheet("ImageTest");
+        
+        var imagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Images", "1.jpg");
+        if (!File.Exists(imagePath)) imagePath = @"D:\projects\ExcelIO\ExcelIO.Test\Images\1.jpg";
+        
+        ws.AddImage(imagePath, 2, 2, 5, 3);
+        
+        var outputPath = "ImageRoundTrip.xlsx";
+        XlHelper.Save(outputPath, wb);
+        
+        var loadedWb = XlHelper.Load(outputPath);
+        var loadedWs = loadedWb.Worksheets[0];
+        
+        Assert.Single(loadedWs.Images);
+        var img = loadedWs.Images[0];
+        Assert.Equal(2, img.RowIndex);
+        Assert.Equal(2, img.ColumnIndex);
+        Assert.Equal(5, img.RowSpan);
+        Assert.Equal(3, img.ColumnSpan);
+        Assert.Equal("jpg", img.Extension);
+        Assert.True(img.Bytes.Length > 0);
+    }
+
+    [Fact]
+    public void TestXlsxLoadOptions()
+    {
+        var wb = new XlWorkbook();
+        var ws = wb.NewWorksheet("OptionTest");
+        ws.Columns[0] = new XlColumn { Width = 25, Style = new XlStyle { Bold = true } };
+        var row = ws.NewRow(["Styled"]);
+        row.Style = new XlStyle { FillColor = "FFFF0000" };
+        
+        var imagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Images", "1.jpg");
+        if (!File.Exists(imagePath)) imagePath = @"D:\projects\ExcelIO\ExcelIO.Test\Images\1.jpg";
+        ws.AddImage(imagePath, 2, 2, 1, 1);
+        
+        var outputPath = "LoadOptionsTest.xlsx";
+        XlHelper.Save(outputPath, wb);
+        
+        // 1. Load without styles
+        var noStylesWb = XlHelper.Load(outputPath, new XlLoadOptions { LoadStyles = false, LoadImages = true });
+        var noStylesWs = noStylesWb.Worksheets[0];
+        Assert.Null(noStylesWs.Columns[0].Style);
+        Assert.Null(noStylesWs.Rows[0].Style);
+        Assert.Single(noStylesWs.Images);
+        
+        // 2. Load without images
+        var noImagesWb = XlHelper.Load(outputPath, new XlLoadOptions { LoadStyles = true, LoadImages = false });
+        var noImagesWs = noImagesWb.Worksheets[0];
+        Assert.NotNull(noImagesWs.Columns[0].Style);
+        Assert.Empty(noImagesWs.Images);
     }
 }
