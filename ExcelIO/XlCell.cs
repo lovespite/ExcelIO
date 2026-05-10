@@ -22,6 +22,8 @@ public class XlCell
         }
     }
 
+    public XlStyle? Style { get; set; }
+
     public override string ToString()
     {
         return Value;

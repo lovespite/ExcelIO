@@ -133,6 +133,8 @@ public class XlWorksheet : IReadOnlyList<XlRow>
     public string Name { get; set; } = "Sheet1";
     public List<XlRow> Rows { get; set; } = [];
     public List<XlWorksheetImage> Images { get; } = [];
+    public XlSheetOptions Options { get; } = new();
+    public Dictionary<int, XlColumn> Columns { get; } = [];
 
     public int Count => ((IReadOnlyCollection<XlRow>)Rows).Count;
 

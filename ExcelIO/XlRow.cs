@@ -49,6 +49,10 @@ public class XlRow : IReadOnlyList<string>
 
     public int Count => Cells.Count;
 
+    public double? Height { get; set; }
+    public bool Hidden { get; set; }
+    public XlStyle? Style { get; set; }
+
     public IEnumerator<string> GetEnumerator()
     {
         return Cells.Select(c => c.Value).GetEnumerator();

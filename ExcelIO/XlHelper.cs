@@ -1,4 +1,4 @@
-﻿using System.IO.Compression;
+using System.IO.Compression;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
@@ -79,8 +79,7 @@ public static class XlHelper
         // 4. 写入 xl/_rels/workbook.xml.rels (定义工作簿与Sheet的关系)
         WriteEntry(archive, "xl/_rels/workbook.xml.rels", GenerateWorkbookRels(workbookData.Worksheets.Count));
 
-        // 5. 写入 xl/styles.xml (写入一个空的样式文件，防止打开报错)
-        WriteEntry(archive, "xl/styles.xml", GenerateMinimalStyles());
+        var styleBuilder = new XlsxStyleBuilder();
 
         // 6. 写入具体的 Sheet 数据
         for (int i = 0; i < workbookData.Worksheets.Count; i++)
@@ -88,12 +87,15 @@ public static class XlHelper
             var sheet = workbookData.Worksheets[i];
             drawingSheetMap.TryGetValue(i + 1, out int sheetDrawingIndex);
             var path = $"xl/worksheets/sheet{i + 1}.xml";
-            WriteEntry(archive, path, GenerateSheetXml(sheet, sheetDrawingIndex > 0 ? "rId1" : null));
+            WriteEntry(archive, path, GenerateSheetXml(sheet, styleBuilder, sheetDrawingIndex > 0 ? "rId1" : null));
             if (sheetDrawingIndex > 0)
             {
                 WriteEntry(archive, $"xl/worksheets/_rels/sheet{i + 1}.xml.rels", GenerateWorksheetRels(sheetDrawingIndex));
             }
         }
+
+        // 5. 写入 xl/styles.xml
+        WriteEntry(archive, "xl/styles.xml", styleBuilder.GenerateStylesXml());
 
         int globalImageIndex = 1;
         foreach (var (_, currentDrawingIndex, sheet) in drawingSheets)
@@ -564,40 +566,99 @@ public static class XlHelper
         };
     }
 
-    private static string GenerateSheetXml(XlWorksheet sheet, string? drawingRelationshipId = null)
+    private static string GenerateSheetXml(XlWorksheet sheet, XlsxStyleBuilder styleBuilder, string? drawingRelationshipId = null)
     {
         var sb = new StringBuilder();
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
-        if (string.IsNullOrEmpty(drawingRelationshipId))
+        var namespaces = string.IsNullOrEmpty(drawingRelationshipId) ? $"xmlns=\"{NsMain}\"" : $"xmlns=\"{NsMain}\" xmlns:r=\"{NsRel}\"";
+        sb.Append($"<worksheet {namespaces}>");
+
+        // Sheet Properties (Tab Color)
+        if (!string.IsNullOrEmpty(sheet.Options.TabColor))
         {
-            sb.Append($"<worksheet xmlns=\"{NsMain}\">");
+            sb.Append($"<sheetPr><tabColor rgb=\"{sheet.Options.TabColor}\"/></sheetPr>");
+        }
+
+        // Sheet Views (Gridlines)
+        sb.Append("<sheetViews>");
+        sb.Append($"<sheetView tabSelected=\"1\" workbookViewId=\"0\" showGridLines=\"{(sheet.Options.ShowGridLines ? "1" : "0")}\">");
+        sb.Append("</sheetView></sheetViews>");
+
+        // Sheet Format (Default Row Height)
+        if (sheet.Options.DefaultRowHeight.HasValue)
+        {
+            sb.Append($"<sheetFormatPr defaultRowHeight=\"{sheet.Options.DefaultRowHeight}\" customHeight=\"1\"/>");
         }
         else
         {
-            sb.Append($"<worksheet xmlns=\"{NsMain}\" xmlns:r=\"{NsRel}\">");
+            sb.Append("<sheetFormatPr defaultRowHeight=\"15\"/>");
         }
+
+        // Columns
+        if (sheet.Columns.Count > 0)
+        {
+            sb.Append("<cols>");
+            foreach (var colPair in sheet.Columns.OrderBy(x => x.Key))
+            {
+                int colIdx = colPair.Key + 1;
+                var col = colPair.Value;
+                sb.Append($"<col min=\"{colIdx}\" max=\"{colIdx}\"");
+                if (col.Width.HasValue) sb.Append($" width=\"{col.Width}\" customWidth=\"1\"");
+                if (col.Hidden) sb.Append(" hidden=\"1\"");
+                if (col.Style != null)
+                {
+                    int styleIdx = styleBuilder.GetStyleIndex(col.Style);
+                    sb.Append($" style=\"{styleIdx}\"");
+                }
+                sb.Append("/>");
+            }
+            sb.Append("</cols>");
+        }
+
         sb.Append("<sheetData>");
 
         for (int r = 0; r < sheet.Rows.Count; r++)
         {
             var row = sheet.Rows[r];
-            // r 是行号，从 1 开始
-            sb.Append($"<row r=\"{r + 1}\">");
+            sb.Append($"<row r=\"{r + 1}\"");
+            if (row.Height.HasValue) sb.Append($" ht=\"{row.Height}\" customHeight=\"1\"");
+            if (row.Hidden) sb.Append(" hidden=\"1\"");
+            
+            if (row.Style != null)
+            {
+                int rowStyleIdx = styleBuilder.GetStyleIndex(row.Style);
+                sb.Append($" s=\"{rowStyleIdx}\" customFormat=\"1\"");
+            }
+            sb.Append(">");
+
             for (int c = 0; c < row.Cells.Count; c++)
             {
-                var val = row.Cells[c].Value;
-                if (string.IsNullOrEmpty(val)) continue; // 跳过空单元格减小体积
+                var cell = row.Cells[c];
+                var val = cell.Value;
+                
+                // Get Style Index
+                XlStyle? finalStyle = cell.Style ?? row.Style;
+                if (finalStyle == null && sheet.Columns.TryGetValue(c, out var col))
+                {
+                    finalStyle = col.Style;
+                }
+                int styleIdx = styleBuilder.GetStyleIndex(finalStyle);
 
-                // 获取列名 A, B, ... AA
+                if (string.IsNullOrEmpty(val) && styleIdx == 0) continue;
+
                 string colRef = GetColumnName(c) + (r + 1);
+                sb.Append($"<c r=\"{colRef}\" s=\"{styleIdx}\"");
 
-                // 转义 XML 特殊字符
-                string cleanVal = EscapeXml(val);
-
-                // 核心技巧：使用 t="inlineStr"，这样就不用生成 sharedStrings.xml 了，大幅简化逻辑！
-                sb.Append($"<c r=\"{colRef}\" t=\"inlineStr\">");
-                sb.Append($"<is><t>{cleanVal}</t></is>");
-                sb.Append("</c>");
+                if (!string.IsNullOrEmpty(val))
+                {
+                    sb.Append(" t=\"inlineStr\">");
+                    sb.Append($"<is><t>{EscapeXml(val)}</t></is>");
+                    sb.Append("</c>");
+                }
+                else
+                {
+                    sb.Append("/>");
+                }
             }
             sb.Append("</row>");
         }
