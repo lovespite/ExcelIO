@@ -1,10 +1,24 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <Version>1.1.0</Version>
-  </PropertyGroup>
-
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <Version>1.1.0</Version>
+        <Authors>Lovespite</Authors>
+        <Company>Lovespite</Company>
+        <Description>
+            A lightweight, high-performance C# library for reading and writing Excel (.xlsx and .xls) files
+            with styling and image support.
+        </Description>
+        <PackageTags>Excel;OpenXML;XLSX;XLS;Spreadsheet</PackageTags>
+        <PackageProjectUrl>https://github.com/lovespite/ExcelIO</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/lovespite/ExcelIO.git</RepositoryUrl>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+    </PropertyGroup>
+    <ItemGroup>
+        <!-- Include README in the package -->
+        <None Include="..\README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
 </Project>
