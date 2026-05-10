@@ -1,5 +1,4 @@
-﻿using System.Collections;
-using System.Data.SqlTypes;
+using System.Collections;
 
 namespace ExcelIO;
 
@@ -133,6 +132,7 @@ public class XlWorksheet : IReadOnlyList<XlRow>
 
     public string Name { get; set; } = "Sheet1";
     public List<XlRow> Rows { get; set; } = [];
+    public List<XlWorksheetImage> Images { get; } = [];
 
     public int Count => ((IReadOnlyCollection<XlRow>)Rows).Count;
 
@@ -167,6 +167,26 @@ public class XlWorksheet : IReadOnlyList<XlRow>
     public void ClearRows()
     {
         Rows.Clear();
+    }
+
+    public XlWorksheetImage AddImage(string imagePath, int rowIndex, int columnIndex, int rowSpan = 1, int columnSpan = 1)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(imagePath);
+        if (!File.Exists(imagePath))
+        {
+            throw new FileNotFoundException("Image file not found.", imagePath);
+        }
+
+        var imageBytes = File.ReadAllBytes(imagePath);
+        var imageExtension = Path.GetExtension(imagePath);
+        return AddImage(imageBytes, imageExtension, rowIndex, columnIndex, rowSpan, columnSpan);
+    }
+
+    public XlWorksheetImage AddImage(byte[] imageBytes, string imageExtension, int rowIndex, int columnIndex, int rowSpan = 1, int columnSpan = 1)
+    {
+        var image = XlWorksheetImage.Create(imageBytes, imageExtension, rowIndex, columnIndex, rowSpan, columnSpan);
+        Images.Add(image);
+        return image;
     }
 
 

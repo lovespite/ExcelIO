@@ -42,13 +42,33 @@ public static class XlHelper
     /// </summary>
     public static void Save(string filepath, XlWorkbook workbookData)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filepath);
+        ArgumentNullException.ThrowIfNull(workbookData);
+
         if (File.Exists(filepath)) File.Delete(filepath);
+
+        var drawingSheets = new List<(int SheetIndex, int DrawingIndex, XlWorksheet Sheet)>();
+        var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int drawingIndex = 1;
+        for (int i = 0; i < workbookData.Worksheets.Count; i++)
+        {
+            var sheet = workbookData.Worksheets[i];
+            if (sheet.Images.Count == 0) continue;
+
+            drawingSheets.Add((i + 1, drawingIndex, sheet));
+            drawingIndex++;
+            foreach (var image in sheet.Images)
+            {
+                imageExtensions.Add(image.Extension);
+            }
+        }
+        var drawingSheetMap = drawingSheets.ToDictionary(x => x.SheetIndex, x => x.DrawingIndex);
 
         using var fileStream = new FileStream(filepath, FileMode.Create);
         using var archive = new ZipArchive(fileStream, ZipArchiveMode.Create);
 
         // 1. 写入 [Content_Types].xml (定义文件类型)
-        WriteEntry(archive, "[Content_Types].xml", GenerateContentTypes(workbookData.Worksheets.Count));
+        WriteEntry(archive, "[Content_Types].xml", GenerateContentTypes(workbookData.Worksheets.Count, drawingSheets.Count, imageExtensions));
 
         // 2. 写入 _rels/.rels (定义根关系)
         WriteEntry(archive, "_rels/.rels", GenerateRootRels());
@@ -66,8 +86,30 @@ public static class XlHelper
         for (int i = 0; i < workbookData.Worksheets.Count; i++)
         {
             var sheet = workbookData.Worksheets[i];
+            drawingSheetMap.TryGetValue(i + 1, out int sheetDrawingIndex);
             var path = $"xl/worksheets/sheet{i + 1}.xml";
-            WriteEntry(archive, path, GenerateSheetXml(sheet));
+            WriteEntry(archive, path, GenerateSheetXml(sheet, sheetDrawingIndex > 0 ? "rId1" : null));
+            if (sheetDrawingIndex > 0)
+            {
+                WriteEntry(archive, $"xl/worksheets/_rels/sheet{i + 1}.xml.rels", GenerateWorksheetRels(sheetDrawingIndex));
+            }
+        }
+
+        int globalImageIndex = 1;
+        foreach (var (_, currentDrawingIndex, sheet) in drawingSheets)
+        {
+            var drawingImageParts = new List<DrawingImagePart>(sheet.Images.Count);
+            for (int imageIndex = 0; imageIndex < sheet.Images.Count; imageIndex++)
+            {
+                var image = sheet.Images[imageIndex];
+                var mediaFileName = $"image{globalImageIndex}.{image.Extension}";
+                WriteBinaryEntry(archive, $"xl/media/{mediaFileName}", image.Bytes);
+                drawingImageParts.Add(new DrawingImagePart($"rId{imageIndex + 1}", mediaFileName, image, imageIndex + 1));
+                globalImageIndex++;
+            }
+
+            WriteEntry(archive, $"xl/drawings/drawing{currentDrawingIndex}.xml", GenerateDrawingXml(drawingImageParts));
+            WriteEntry(archive, $"xl/drawings/_rels/drawing{currentDrawingIndex}.xml.rels", GenerateDrawingRels(drawingImageParts));
         }
     }
 
@@ -364,6 +406,8 @@ public static class XlHelper
 
     #region XML Generation Helpers (写 Excel 用的辅助方法)
 
+    private readonly record struct DrawingImagePart(string RelationshipId, string MediaFileName, XlWorksheetImage Image, int PictureId);
+
     private static void WriteEntry(ZipArchive archive, string path, string content)
     {
         var entry = archive.CreateEntry(path);
@@ -372,18 +416,33 @@ public static class XlHelper
         writer.Write(content);
     }
 
-    private static string GenerateContentTypes(int sheetCount)
+    private static void WriteBinaryEntry(ZipArchive archive, string path, byte[] content)
+    {
+        var entry = archive.CreateEntry(path);
+        using var stream = entry.Open();
+        stream.Write(content, 0, content.Length);
+    }
+
+    private static string GenerateContentTypes(int sheetCount, int drawingCount, IEnumerable<string> imageExtensions)
     {
         var sb = new StringBuilder();
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
         sb.Append("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>");
         sb.Append("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
+        foreach (var ext in imageExtensions.Select(x => x.ToLowerInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.Ordinal))
+        {
+            sb.Append($"<Default Extension=\"{ext}\" ContentType=\"{GetImageContentType(ext)}\"/>");
+        }
         sb.Append("<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>");
         sb.Append("<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"); // 即使为空也需要
         for (int i = 1; i <= sheetCount; i++)
         {
             sb.Append($"<Override PartName=\"/xl/worksheets/sheet{i}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>");
+        }
+        for (int i = 1; i <= drawingCount; i++)
+        {
+            sb.Append($"<Override PartName=\"/xl/drawings/drawing{i}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawing+xml\"/>");
         }
         sb.Append("</Types>");
         return sb.ToString();
@@ -442,11 +501,81 @@ public static class XlHelper
                "</styleSheet>";
     }
 
-    private static string GenerateSheetXml(XlWorksheet sheet)
+    private static string GenerateWorksheetRels(int drawingIndex)
+    {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+               $"<Relationships xmlns=\"{NsPkgRel}\">" +
+               $"<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../drawings/drawing{drawingIndex}.xml\"/>" +
+               "</Relationships>";
+    }
+
+    private static string GenerateDrawingXml(IReadOnlyList<DrawingImagePart> drawingImageParts)
     {
         var sb = new StringBuilder();
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
-        sb.Append($"<worksheet xmlns=\"{NsMain}\">");
+        sb.Append($"<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"{NsRel}\">");
+
+        foreach (var part in drawingImageParts)
+        {
+            int fromColumn = part.Image.ColumnIndex;
+            int fromRow = part.Image.RowIndex;
+            int toColumn = fromColumn + part.Image.ColumnSpan;
+            int toRow = fromRow + part.Image.RowSpan;
+
+            sb.Append("<xdr:twoCellAnchor editAs=\"twoCell\">");
+            sb.Append($"<xdr:from><xdr:col>{fromColumn}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{fromRow}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>");
+            sb.Append($"<xdr:to><xdr:col>{toColumn}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{toRow}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>");
+            sb.Append("<xdr:pic>");
+            sb.Append($"<xdr:nvPicPr><xdr:cNvPr id=\"{part.PictureId}\" name=\"Picture {part.PictureId}\"/><xdr:cNvPicPr/></xdr:nvPicPr>");
+            sb.Append($"<xdr:blipFill><a:blip r:embed=\"{part.RelationshipId}\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>");
+            sb.Append("<xdr:spPr><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr>");
+            sb.Append("</xdr:pic>");
+            sb.Append("<xdr:clientData/>");
+            sb.Append("</xdr:twoCellAnchor>");
+        }
+
+        sb.Append("</xdr:wsDr>");
+        return sb.ToString();
+    }
+
+    private static string GenerateDrawingRels(IReadOnlyList<DrawingImagePart> drawingImageParts)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+        sb.Append($"<Relationships xmlns=\"{NsPkgRel}\">");
+        foreach (var part in drawingImageParts)
+        {
+            sb.Append($"<Relationship Id=\"{part.RelationshipId}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/{part.MediaFileName}\"/>");
+        }
+        sb.Append("</Relationships>");
+        return sb.ToString();
+    }
+
+    private static string GetImageContentType(string extension)
+    {
+        return extension switch
+        {
+            "png" => "image/png",
+            "jpg" or "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "bmp" => "image/bmp",
+            "tif" or "tiff" => "image/tiff",
+            _ => throw new NotSupportedException($"Unsupported image format: .{extension}")
+        };
+    }
+
+    private static string GenerateSheetXml(XlWorksheet sheet, string? drawingRelationshipId = null)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+        if (string.IsNullOrEmpty(drawingRelationshipId))
+        {
+            sb.Append($"<worksheet xmlns=\"{NsMain}\">");
+        }
+        else
+        {
+            sb.Append($"<worksheet xmlns=\"{NsMain}\" xmlns:r=\"{NsRel}\">");
+        }
         sb.Append("<sheetData>");
 
         for (int r = 0; r < sheet.Rows.Count; r++)
@@ -474,6 +603,10 @@ public static class XlHelper
         }
 
         sb.Append("</sheetData>");
+        if (!string.IsNullOrEmpty(drawingRelationshipId))
+        {
+            sb.Append($"<drawing r:id=\"{drawingRelationshipId}\"/>");
+        }
         sb.Append("</worksheet>");
         return sb.ToString();
     }
