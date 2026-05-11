@@ -15,6 +15,9 @@ public class XlWorksheet : IReadOnlyList<XlRow>
         _wb = wb;
     }
 
+    public XlRange Range(string expression) => new(this, expression);
+    public XlRange Range(int col, int row) => new(this, col, row);
+
     public int IndexOf(string columnName)
     {
         if (_indexCache.TryGetValue(columnName, out int index))
@@ -135,6 +138,7 @@ public class XlWorksheet : IReadOnlyList<XlRow>
     public List<XlWorksheetImage> Images { get; } = [];
     public XlSheetOptions Options { get; } = new();
     public Dictionary<int, XlColumn> Columns { get; } = [];
+    public List<string> MergedCells { get; } = [];
 
     public int Count => ((IReadOnlyCollection<XlRow>)Rows).Count;
 
@@ -169,6 +173,18 @@ public class XlWorksheet : IReadOnlyList<XlRow>
     public void ClearRows()
     {
         Rows.Clear();
+    }
+
+    public XlWorksheetImage AddImage(string imagePath, XlRange range)
+    {
+        if (range.IsInfiniteRow || range.IsInfiniteColumn) throw new ArgumentException("Cannot add image to infinite range");
+        return AddImage(imagePath, range.StartRow, range.StartColumn, range.EndRow - range.StartRow + 1, range.EndColumn - range.StartColumn + 1);
+    }
+
+    public XlWorksheetImage AddImage(byte[] imageBytes, string imageExtension, XlRange range)
+    {
+        if (range.IsInfiniteRow || range.IsInfiniteColumn) throw new ArgumentException("Cannot add image to infinite range");
+        return AddImage(imageBytes, imageExtension, range.StartRow, range.StartColumn, range.EndRow - range.StartRow + 1, range.EndColumn - range.StartColumn + 1);
     }
 
     public XlWorksheetImage AddImage(string imagePath, int rowIndex, int columnIndex, int rowSpan = 1, int columnSpan = 1)

@@ -365,6 +365,11 @@ public static class XlHelper
                                 if (drawingRid == null) drawingRid = reader.GetAttribute("r:id");
                             }
                         }
+                        else if (reader.LocalName == "mergeCell")
+                        {
+                            var r = reader.GetAttribute("ref");
+                            if (r != null) ws.MergedCells.Add(r);
+                        }
                     }
                 }
             }
@@ -763,6 +768,17 @@ public static class XlHelper
         }
 
         sb.Append("</sheetData>");
+
+        if (sheet.MergedCells.Count > 0)
+        {
+            sb.Append($"<mergeCells count=\"{sheet.MergedCells.Count}\">");
+            foreach (var mergeRef in sheet.MergedCells)
+            {
+                sb.Append($"<mergeCell ref=\"{mergeRef}\"/>");
+            }
+            sb.Append("</mergeCells>");
+        }
+
         if (!string.IsNullOrEmpty(drawingRelationshipId))
         {
             sb.Append($"<drawing r:id=\"{drawingRelationshipId}\"/>");
