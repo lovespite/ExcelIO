@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 
-namespace ExcelIO.Tests;
+namespace ExcelIO.Test;
 
 public class XlHelperXlsxImageSaveTests
 {
@@ -53,7 +53,7 @@ public class XlHelperXlsxImageSaveTests
     public void AddImage_PathInput_UsesCellSpanForAnchor()
     {
         var imagePath = Path.Combine(Path.GetTempPath(), $"img-{Guid.NewGuid():N}.png");
-        var xlsxPath = Path.Combine(Path.GetTempPath(), $"xlsx-img-path-{Guid.NewGuid():N}.xlsx");
+        var xlsxPath = $"xlsx-img-path-{Guid.NewGuid():N}.xlsx";
         try
         {
             File.WriteAllBytes(imagePath, Png1x1Bytes);
@@ -100,6 +100,20 @@ public class XlHelperXlsxImageSaveTests
 
         XlHelper.Save("test-images.xlsx", wb);
         Assert.True(File.Exists("test-images.xlsx"));
+    }
+
+    [Fact]
+    public void AddRealImages_PlaceInCell_Test()
+    {
+        var wb = new XlWorkbook();
+        var ws = wb.NewWorksheet("Sheet1");
+
+        var imagePath = Path.Combine(AppContext.BaseDirectory, $"Images/BASE_IMG_GAME.png");
+        ws.AddRow($"Image 1");
+        ws.AddImage(imagePath, rowIndex: 0, columnIndex: 1, placeInCell: true);
+
+        XlHelper.Save("test-images-incell.xlsx", wb);
+        Assert.True(File.Exists("test-images-incell.xlsx"));
     }
 
     private static string ReadEntryText(ZipArchive archive, string path)

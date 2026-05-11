@@ -13,7 +13,7 @@ public sealed class XlWorksheetImage
         "tiff"
     ];
 
-    private XlWorksheetImage(byte[] imageBytes, string extension, int rowIndex, int columnIndex, int rowSpan, int columnSpan)
+    private XlWorksheetImage(byte[] imageBytes, string extension, int rowIndex, int columnIndex, int rowSpan, int columnSpan, bool placeInCell)
     {
         Bytes = imageBytes;
         Extension = extension;
@@ -21,6 +21,7 @@ public sealed class XlWorksheetImage
         ColumnIndex = columnIndex;
         RowSpan = rowSpan;
         ColumnSpan = columnSpan;
+        PlaceInCell = placeInCell;
     }
 
     public byte[] Bytes { get; }
@@ -29,8 +30,9 @@ public sealed class XlWorksheetImage
     public int ColumnIndex { get; }
     public int RowSpan { get; }
     public int ColumnSpan { get; }
+    public bool PlaceInCell { get; }
 
-    internal static XlWorksheetImage Create(byte[] imageBytes, string imageExtension, int rowIndex, int columnIndex, int rowSpan, int columnSpan)
+    internal static XlWorksheetImage Create(byte[] imageBytes, string imageExtension, int rowIndex, int columnIndex, int rowSpan, int columnSpan, bool placeInCell = false)
     {
         ArgumentNullException.ThrowIfNull(imageBytes);
         ArgumentException.ThrowIfNullOrWhiteSpace(imageExtension);
@@ -62,7 +64,7 @@ public sealed class XlWorksheetImage
             throw new NotSupportedException($"Unsupported image format: .{normalizedExtension}");
         }
 
-        return new XlWorksheetImage([.. imageBytes], normalizedExtension, rowIndex, columnIndex, rowSpan, columnSpan);
+        return new XlWorksheetImage([.. imageBytes], normalizedExtension, rowIndex, columnIndex, rowSpan, columnSpan, placeInCell);
     }
 
     private static string NormalizeExtension(string imageExtension)

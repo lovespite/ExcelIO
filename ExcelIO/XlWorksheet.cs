@@ -175,19 +175,19 @@ public class XlWorksheet : IReadOnlyList<XlRow>
         Rows.Clear();
     }
 
-    public XlWorksheetImage AddImage(string imagePath, XlRange range)
+    public XlWorksheetImage AddImage(string imagePath, XlRange range, bool placeInCell = false)
     {
         if (range.IsInfiniteRow || range.IsInfiniteColumn) throw new ArgumentException("Cannot add image to infinite range");
-        return AddImage(imagePath, range.StartRow, range.StartColumn, range.EndRow - range.StartRow + 1, range.EndColumn - range.StartColumn + 1);
+        return AddImage(imagePath, range.StartRow, range.StartColumn, range.EndRow - range.StartRow + 1, range.EndColumn - range.StartColumn + 1, placeInCell);
     }
 
-    public XlWorksheetImage AddImage(byte[] imageBytes, string imageExtension, XlRange range)
+    public XlWorksheetImage AddImage(byte[] imageBytes, string imageExtension, XlRange range, bool placeInCell = false)
     {
         if (range.IsInfiniteRow || range.IsInfiniteColumn) throw new ArgumentException("Cannot add image to infinite range");
-        return AddImage(imageBytes, imageExtension, range.StartRow, range.StartColumn, range.EndRow - range.StartRow + 1, range.EndColumn - range.StartColumn + 1);
+        return AddImage(imageBytes, imageExtension, range.StartRow, range.StartColumn, range.EndRow - range.StartRow + 1, range.EndColumn - range.StartColumn + 1, placeInCell);
     }
 
-    public XlWorksheetImage AddImage(string imagePath, int rowIndex, int columnIndex, int rowSpan = 1, int columnSpan = 1)
+    public XlWorksheetImage AddImage(string imagePath, int rowIndex, int columnIndex, int rowSpan = 1, int columnSpan = 1, bool placeInCell = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(imagePath);
         if (!File.Exists(imagePath))
@@ -197,12 +197,12 @@ public class XlWorksheet : IReadOnlyList<XlRow>
 
         var imageBytes = File.ReadAllBytes(imagePath);
         var imageExtension = Path.GetExtension(imagePath);
-        return AddImage(imageBytes, imageExtension, rowIndex, columnIndex, rowSpan, columnSpan);
+        return AddImage(imageBytes, imageExtension, rowIndex, columnIndex, rowSpan, columnSpan, placeInCell);
     }
 
-    public XlWorksheetImage AddImage(byte[] imageBytes, string imageExtension, int rowIndex, int columnIndex, int rowSpan = 1, int columnSpan = 1)
+    public XlWorksheetImage AddImage(byte[] imageBytes, string imageExtension, int rowIndex, int columnIndex, int rowSpan = 1, int columnSpan = 1, bool placeInCell = false)
     {
-        var image = XlWorksheetImage.Create(imageBytes, imageExtension, rowIndex, columnIndex, rowSpan, columnSpan);
+        var image = XlWorksheetImage.Create(imageBytes, imageExtension, rowIndex, columnIndex, rowSpan, columnSpan, placeInCell);
         Images.Add(image);
         return image;
     }

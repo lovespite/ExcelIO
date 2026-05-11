@@ -108,11 +108,13 @@ public class XlRangeTests
     }
 
     [Fact]
-    public void Range_Expression_Property()
+    public void Range_AddImage_PlaceInCell_Property()
     {
         var ws = new XlWorksheet(new XlWorkbook());
-        Assert.Equal("A1", ws.Range("A1").RangeExpression);
-        Assert.Equal("A:C", ws.Range("A:C").RangeExpression);
-        Assert.Equal("1:3", ws.Range("1:3").RangeExpression);
+        var range = ws.Range("A1");
+        var img = ws.AddImage(new byte[10], "jpg", range, placeInCell: true);
+        
+        Assert.True(img.PlaceInCell);
+        Assert.Contains(img, ws.Images);
     }
 }

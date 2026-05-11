@@ -1,8 +1,7 @@
-
 using System.Buffers.Binary;
 using System.Text;
 
-namespace ExcelIO.Tests;
+namespace ExcelIO.Test;
 
 public class XlHelperXlsLoadTests
 {

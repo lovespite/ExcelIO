@@ -48,18 +48,40 @@ public static class XlHelper
         if (File.Exists(filepath)) File.Delete(filepath);
 
         var drawingSheets = new List<(int SheetIndex, int DrawingIndex, XlWorksheet Sheet)>();
+        var cellImages = new List<(XlWorksheet Sheet, XlWorksheetImage Image, int vmIndex, int richValueIndex, int imageIndex)>();
         var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        
         int drawingIndex = 1;
+        int globalImageIndex = 1;
+
         for (int i = 0; i < workbookData.Worksheets.Count; i++)
         {
             var sheet = workbookData.Worksheets[i];
-            if (sheet.Images.Count == 0) continue;
+            var floatingImages = sheet.Images.Where(img => !img.PlaceInCell).ToList();
+            var sheetCellImages = sheet.Images.Where(img => img.PlaceInCell).ToList();
 
-            drawingSheets.Add((i + 1, drawingIndex, sheet));
-            drawingIndex++;
-            foreach (var image in sheet.Images)
+            if (floatingImages.Count > 0)
             {
-                imageExtensions.Add(image.Extension);
+                drawingSheets.Add((i + 1, drawingIndex, sheet));
+                drawingIndex++;
+            }
+
+            foreach (var img in sheetCellImages)
+            {
+                // Ensure the cell exists so it gets rendered in sheet.xml
+                while (sheet.Rows.Count <= img.RowIndex) sheet.Rows.Add(new XlRow(sheet));
+                var row = sheet.Rows[img.RowIndex];
+                while (row.Cells.Count <= img.ColumnIndex) row.Cells.Add(new XlCell(row));
+
+                // vmIndex is 1-based, richValueIndex and imageIndex are 0-based
+                int currentCellImageCount = cellImages.Count;
+                cellImages.Add((sheet, img, currentCellImageCount + 1, currentCellImageCount, currentCellImageCount));
+                imageExtensions.Add(img.Extension);
+            }
+            
+            foreach (var img in floatingImages)
+            {
+                imageExtensions.Add(img.Extension);
             }
         }
         var drawingSheetMap = drawingSheets.ToDictionary(x => x.SheetIndex, x => x.DrawingIndex);
@@ -68,7 +90,7 @@ public static class XlHelper
         using var archive = new ZipArchive(fileStream, ZipArchiveMode.Create);
 
         // 1. 写入 [Content_Types].xml (定义文件类型)
-        WriteEntry(archive, "[Content_Types].xml", GenerateContentTypes(workbookData.Worksheets.Count, drawingSheets.Count, imageExtensions));
+        WriteEntry(archive, "[Content_Types].xml", GenerateContentTypes(workbookData.Worksheets.Count, drawingSheets.Count, cellImages.Count > 0, imageExtensions));
 
         // 2. 写入 _rels/.rels (定义根关系)
         WriteEntry(archive, "_rels/.rels", GenerateRootRels());
@@ -77,7 +99,7 @@ public static class XlHelper
         WriteEntry(archive, "xl/workbook.xml", GenerateWorkbookXml(workbookData.Worksheets));
 
         // 4. 写入 xl/_rels/workbook.xml.rels (定义工作簿与Sheet的关系)
-        WriteEntry(archive, "xl/_rels/workbook.xml.rels", GenerateWorkbookRels(workbookData.Worksheets.Count));
+        WriteEntry(archive, "xl/_rels/workbook.xml.rels", GenerateWorkbookRels(workbookData.Worksheets.Count, cellImages.Count > 0));
 
         var styleBuilder = new XlsxStyleBuilder();
 
@@ -86,32 +108,62 @@ public static class XlHelper
         {
             var sheet = workbookData.Worksheets[i];
             drawingSheetMap.TryGetValue(i + 1, out int sheetDrawingIndex);
-            var path = $"xl/worksheets/sheet{i + 1}.xml";
-            WriteEntry(archive, path, GenerateSheetXml(sheet, styleBuilder, sheetDrawingIndex > 0 ? "rId1" : null));
+            var path = "xl/worksheets/sheet" + (i + 1) + ".xml";
+            
+            var sheetVmMap = cellImages.Where(x => x.Sheet == sheet)
+                                       .ToDictionary(x => (x.Image.RowIndex, x.Image.ColumnIndex), x => x.vmIndex);
+
+            WriteEntry(archive, path, GenerateSheetXml(sheet, styleBuilder, sheetVmMap, sheetDrawingIndex > 0 ? "rId1" : null));
             if (sheetDrawingIndex > 0)
             {
-                WriteEntry(archive, $"xl/worksheets/_rels/sheet{i + 1}.xml.rels", GenerateWorksheetRels(sheetDrawingIndex));
+                WriteEntry(archive, "xl/worksheets/_rels/sheet" + (i + 1) + ".xml.rels", GenerateWorksheetRels(sheetDrawingIndex));
             }
         }
 
         // 5. 写入 xl/styles.xml
         WriteEntry(archive, "xl/styles.xml", styleBuilder.GenerateStylesXml());
 
-        int globalImageIndex = 1;
+        // 7. 写入 Rich Data 文件
+        if (cellImages.Count > 0)
+        {
+            WriteEntry(archive, "xl/metadata.xml", GenerateMetadataXml(cellImages.Count));
+            WriteEntry(archive, "xl/richData/rdrichvaluestructure.xml", GenerateRichValueStructureXml());
+            WriteEntry(archive, "xl/richData/rdRichValueTypes.xml", GenerateRichValueTypesXml());
+            
+            var rvParts = new List<RichValuePart>();
+            var rvRelParts = new List<RichValueRelPart>();
+            
+            for (int ci = 0; ci < cellImages.Count; ci++)
+            {
+                var mediaFileName = "image" + globalImageIndex + "." + cellImages[ci].Image.Extension;
+                WriteBinaryEntry(archive, "xl/media/" + mediaFileName, cellImages[ci].Image.Bytes);
+                
+                rvParts.Add(new RichValuePart(cellImages[ci].richValueIndex, cellImages[ci].imageIndex));
+                rvRelParts.Add(new RichValueRelPart("rId" + (ci + 1), mediaFileName));
+                
+                globalImageIndex++;
+            }
+            
+            WriteEntry(archive, "xl/richData/rdrichvalue.xml", GenerateRichValueXml(rvParts));
+            WriteEntry(archive, "xl/richData/richValueRel.xml", GenerateRichValueRelXml(rvRelParts));
+            WriteEntry(archive, "xl/richData/_rels/richValueRel.xml.rels", GenerateRichValueRelRels(rvRelParts));
+        }
+
         foreach (var (_, currentDrawingIndex, sheet) in drawingSheets)
         {
-            var drawingImageParts = new List<DrawingImagePart>(sheet.Images.Count);
-            for (int imageIndex = 0; imageIndex < sheet.Images.Count; imageIndex++)
+            var floatingImages = sheet.Images.Where(img => !img.PlaceInCell).ToList();
+            var drawingImageParts = new List<DrawingImagePart>(floatingImages.Count);
+            for (int imageIndex = 0; imageIndex < floatingImages.Count; imageIndex++)
             {
-                var image = sheet.Images[imageIndex];
-                var mediaFileName = $"image{globalImageIndex}.{image.Extension}";
-                WriteBinaryEntry(archive, $"xl/media/{mediaFileName}", image.Bytes);
-                drawingImageParts.Add(new DrawingImagePart($"rId{imageIndex + 1}", mediaFileName, image, imageIndex + 1));
+                var image = floatingImages[imageIndex];
+                var mediaFileName = "image" + globalImageIndex + "." + image.Extension;
+                WriteBinaryEntry(archive, "xl/media/" + mediaFileName, image.Bytes);
+                drawingImageParts.Add(new DrawingImagePart("rId" + (imageIndex + 1), mediaFileName, image, imageIndex + 1));
                 globalImageIndex++;
             }
 
-            WriteEntry(archive, $"xl/drawings/drawing{currentDrawingIndex}.xml", GenerateDrawingXml(drawingImageParts));
-            WriteEntry(archive, $"xl/drawings/_rels/drawing{currentDrawingIndex}.xml.rels", GenerateDrawingRels(drawingImageParts));
+            WriteEntry(archive, "xl/drawings/drawing" + currentDrawingIndex + ".xml", GenerateDrawingXml(drawingImageParts));
+            WriteEntry(archive, "xl/drawings/_rels/drawing" + currentDrawingIndex + ".xml.rels", GenerateDrawingRels(drawingImageParts));
         }
     }
 
@@ -513,6 +565,91 @@ public static class XlHelper
     #region XML Generation Helpers (写 Excel 用的辅助方法)
 
     private readonly record struct DrawingImagePart(string RelationshipId, string MediaFileName, XlWorksheetImage Image, int PictureId);
+    private readonly record struct RichValuePart(int RichValueIndex, int ImageIndex);
+    private readonly record struct RichValueRelPart(string RelationshipId, string MediaFileName);
+
+    private static string GenerateMetadataXml(int cellImageCount)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+        sb.Append("<metadata xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:xlrd=\"http://schemas.microsoft.com/office/spreadsheetml/2017/richdata\">");
+        sb.Append("<metadataTypes count=\"1\"><metadataType name=\"XLRICHVALUE\" minSupportedVersion=\"120000\" copy=\"1\" pasteAll=\"1\" pasteValues=\"1\" merge=\"1\" splitFirst=\"1\" rowColShift=\"1\" clearFormats=\"1\" clearComments=\"1\" assign=\"1\" coerce=\"1\"/></metadataTypes>");
+        
+        sb.Append("<futureMetadata name=\"XLRICHVALUE\" count=\"" + cellImageCount + "\">");
+        for (int i = 0; i < cellImageCount; i++)
+        {
+            sb.Append("<bk><extLst><ext uri=\"{3e2802c4-a4d2-4d8b-9148-e3be6c30e623}\"><xlrd:rvb i=\"" + i + "\"/></ext></extLst></bk>");
+        }
+        sb.Append("</futureMetadata>");
+
+        sb.Append("<valueMetadata count=\"" + cellImageCount + "\">");
+        for (int i = 0; i < cellImageCount; i++)
+        {
+            sb.Append("<bk><rc t=\"1\" v=\"" + i + "\"/></bk>");
+        }
+        sb.Append("</valueMetadata>");
+        sb.Append("</metadata>");
+        return sb.ToString();
+    }
+
+    private static string GenerateRichValueStructureXml()
+    {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+               "<rvStructures xmlns=\"http://schemas.microsoft.com/office/spreadsheetml/2017/richdata\" count=\"1\">" +
+               "<s t=\"_localImage\"><k n=\"_rvRel:LocalImageIdentifier\" t=\"i\"/><k n=\"CalcOrigin\" t=\"i\"/></s>" +
+               "</rvStructures>";
+    }
+
+    private static string GenerateRichValueXml(IReadOnlyList<RichValuePart> parts)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+        sb.Append("<rvData xmlns=\"http://schemas.microsoft.com/office/spreadsheetml/2017/richdata\" count=\"" + parts.Count + "\">");
+        foreach (var part in parts)
+        {
+            // s="0" refers to the first structure (localImage)
+            // first <v> is LocalImageIdentifier, second <v> is CalcOrigin (5 = embedded)
+            sb.Append("<rv s=\"0\"><v>" + part.ImageIndex + "</v><v>5</v></rv>");
+        }
+        sb.Append("</rvData>");
+        return sb.ToString();
+    }
+
+    private static string GenerateRichValueRelXml(IReadOnlyList<RichValueRelPart> parts)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+        sb.Append("<richValueRels xmlns=\"http://schemas.microsoft.com/office/spreadsheetml/2022/richvaluerel\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">");
+        foreach (var part in parts)
+        {
+            sb.Append("<rel r:id=\"" + part.RelationshipId + "\"/>");
+        }
+        sb.Append("</richValueRels>");
+        return sb.ToString();
+    }
+
+    private static string GenerateRichValueRelRels(IReadOnlyList<RichValueRelPart> parts)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+        sb.Append("<Relationships xmlns=\"" + NsPkgRel + "\">");
+        foreach (var part in parts)
+        {
+            sb.Append("<Relationship Id=\"" + part.RelationshipId + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/" + part.MediaFileName + "\"/>");
+        }
+        sb.Append("</Relationships>");
+        return sb.ToString();
+    }
+
+    private static string GenerateRichValueTypesXml()
+    {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+               "<rvTypesInfo xmlns=\"http://schemas.microsoft.com/office/spreadsheetml/2017/richdata\" xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\" mc:Ignorable=\"x\" xmlns:x=\"http://schemas.microsoft.com/office/spreadsheetml/2014/revision\">" +
+               "<rvTypeInfo name=\"XLRICHVALUE\">" +
+               "<keyFlags><key name=\"_rvRel:LocalImageIdentifier\" flags=\"1\"/></keyFlags>" +
+               "</rvTypeInfo>" +
+               "</rvTypesInfo>";
+    }
 
     private static void WriteEntry(ZipArchive archive, string path, string content)
     {
@@ -529,7 +666,7 @@ public static class XlHelper
         stream.Write(content, 0, content.Length);
     }
 
-    private static string GenerateContentTypes(int sheetCount, int drawingCount, IEnumerable<string> imageExtensions)
+    private static string GenerateContentTypes(int sheetCount, int drawingCount, bool hasCellImages, IEnumerable<string> imageExtensions)
     {
         var sb = new StringBuilder();
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
@@ -538,17 +675,24 @@ public static class XlHelper
         sb.Append("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
         foreach (var ext in imageExtensions.Select(x => x.ToLowerInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.Ordinal))
         {
-            sb.Append($"<Default Extension=\"{ext}\" ContentType=\"{GetImageContentType(ext)}\"/>");
+            sb.Append("<Default Extension=\"" + ext + "\" ContentType=\"" + GetImageContentType(ext) + "\"/>");
         }
         sb.Append("<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>");
         sb.Append("<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"); // 即使为空也需要
         for (int i = 1; i <= sheetCount; i++)
         {
-            sb.Append($"<Override PartName=\"/xl/worksheets/sheet{i}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>");
+            sb.Append("<Override PartName=\"/xl/worksheets/sheet" + i + ".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>");
         }
         for (int i = 1; i <= drawingCount; i++)
         {
-            sb.Append($"<Override PartName=\"/xl/drawings/drawing{i}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawing+xml\"/>");
+            sb.Append("<Override PartName=\"/xl/drawings/drawing" + i + ".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawing+xml\"/>");
+        }
+        if (hasCellImages)
+        {
+            sb.Append("<Override PartName=\"/xl/metadata.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml\"/>");
+            sb.Append("<Override PartName=\"/xl/richData/rdrichvalue.xml\" ContentType=\"application/vnd.ms-excel.rdrichvalue+xml\"/>");
+            sb.Append("<Override PartName=\"/xl/richData/rdrichvaluestructure.xml\" ContentType=\"application/vnd.ms-excel.rdrichvaluestructure+xml\"/>");
+            sb.Append("<Override PartName=\"/xl/richData/richValueRel.xml\" ContentType=\"application/vnd.ms-excel.richvaluerel+xml\"/>");
         }
         sb.Append("</Types>");
         return sb.ToString();
@@ -578,17 +722,28 @@ public static class XlHelper
         return sb.ToString();
     }
 
-    private static string GenerateWorkbookRels(int sheetCount)
+    private static string GenerateWorkbookRels(int sheetCount, bool hasCellImages)
     {
         var sb = new StringBuilder();
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
-        sb.Append($"<Relationships xmlns=\"{NsPkgRel}\">");
+        sb.Append("<Relationships xmlns=\"" + NsPkgRel + "\">");
         for (int i = 1; i <= sheetCount; i++)
         {
-            sb.Append($"<Relationship Id=\"rId{i}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet{i}.xml\"/>");
+            sb.Append("<Relationship Id=\"rId" + i + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet" + i + ".xml\"/>");
         }
         // 添加 Styles 关系
-        sb.Append($"<Relationship Id=\"rId{sheetCount + 1}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>");
+        int nextId = sheetCount + 1;
+        sb.Append("<Relationship Id=\"rId" + (nextId++) + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>");
+        
+        if (hasCellImages)
+        {
+            sb.Append("<Relationship Id=\"rId" + (nextId++) + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata\" Target=\"metadata.xml\"/>");
+            sb.Append("<Relationship Id=\"rId" + (nextId++) + "\" Type=\"http://schemas.microsoft.com/office/2017/06/relationships/rdRichValue\" Target=\"richData/rdrichvalue.xml\"/>");
+            sb.Append("<Relationship Id=\"rId" + (nextId++) + "\" Type=\"http://schemas.microsoft.com/office/2017/06/relationships/rdRichValueStructure\" Target=\"richData/rdrichvaluestructure.xml\"/>");
+            sb.Append("<Relationship Id=\"rId" + (nextId++) + "\" Type=\"http://schemas.microsoft.com/office/2017/06/relationships/rdRichValueTypes\" Target=\"richData/rdRichValueTypes.xml\"/>");
+            sb.Append("<Relationship Id=\"rId" + (nextId++) + "\" Type=\"http://schemas.microsoft.com/office/2022/10/relationships/richValueRel\" Target=\"richData/richValueRel.xml\"/>");
+        }
+
         sb.Append("</Relationships>");
         return sb.ToString();
     }
@@ -670,28 +825,28 @@ public static class XlHelper
         };
     }
 
-    private static string GenerateSheetXml(XlWorksheet sheet, XlsxStyleBuilder styleBuilder, string? drawingRelationshipId = null)
+    private static string GenerateSheetXml(XlWorksheet sheet, XlsxStyleBuilder styleBuilder, Dictionary<(int Row, int Col), int> cellVmMap, string? drawingRelationshipId = null)
     {
         var sb = new StringBuilder();
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
-        var namespaces = string.IsNullOrEmpty(drawingRelationshipId) ? $"xmlns=\"{NsMain}\"" : $"xmlns=\"{NsMain}\" xmlns:r=\"{NsRel}\"";
-        sb.Append($"<worksheet {namespaces}>");
+        var namespaces = string.IsNullOrEmpty(drawingRelationshipId) ? "xmlns=\"" + NsMain + "\"" : "xmlns=\"" + NsMain + "\" xmlns:r=\"" + NsRel + "\"";
+        sb.Append("<worksheet " + namespaces + ">");
 
         // Sheet Properties (Tab Color)
         if (!string.IsNullOrEmpty(sheet.Options.TabColor))
         {
-            sb.Append($"<sheetPr><tabColor rgb=\"{sheet.Options.TabColor}\"/></sheetPr>");
+            sb.Append("<sheetPr><tabColor rgb=\"" + sheet.Options.TabColor + "\"/></sheetPr>");
         }
 
         // Sheet Views (Gridlines)
         sb.Append("<sheetViews>");
-        sb.Append($"<sheetView tabSelected=\"1\" workbookViewId=\"0\" showGridLines=\"{(sheet.Options.ShowGridLines ? "1" : "0")}\">");
+        sb.Append("<sheetView tabSelected=\"1\" workbookViewId=\"0\" showGridLines=\"" + (sheet.Options.ShowGridLines ? "1" : "0") + "\">");
         sb.Append("</sheetView></sheetViews>");
 
         // Sheet Format (Default Row Height)
         if (sheet.Options.DefaultRowHeight.HasValue)
         {
-            sb.Append($"<sheetFormatPr defaultRowHeight=\"{sheet.Options.DefaultRowHeight}\" customHeight=\"1\"/>");
+            sb.Append("<sheetFormatPr defaultRowHeight=\"" + sheet.Options.DefaultRowHeight + "\" customHeight=\"1\"/>");
         }
         else
         {
@@ -706,13 +861,13 @@ public static class XlHelper
             {
                 int colIdx = colPair.Key + 1;
                 var col = colPair.Value;
-                sb.Append($"<col min=\"{colIdx}\" max=\"{colIdx}\"");
-                if (col.Width.HasValue) sb.Append($" width=\"{col.Width}\" customWidth=\"1\"");
+                sb.Append("<col min=\"" + colIdx + "\" max=\"" + colIdx + "\"");
+                if (col.Width.HasValue) sb.Append(" width=\"" + col.Width + "\" customWidth=\"1\"");
                 if (col.Hidden) sb.Append(" hidden=\"1\"");
                 if (col.Style != null)
                 {
                     int styleIdx = styleBuilder.GetStyleIndex(col.Style);
-                    sb.Append($" style=\"{styleIdx}\"");
+                    sb.Append(" style=\"" + styleIdx + "\"");
                 }
                 sb.Append("/>");
             }
@@ -724,14 +879,14 @@ public static class XlHelper
         for (int r = 0; r < sheet.Rows.Count; r++)
         {
             var row = sheet.Rows[r];
-            sb.Append($"<row r=\"{r + 1}\"");
-            if (row.Height.HasValue) sb.Append($" ht=\"{row.Height}\" customHeight=\"1\"");
+            sb.Append("<row r=\"" + (r + 1) + "\"");
+            if (row.Height.HasValue) sb.Append(" ht=\"" + row.Height + "\" customHeight=\"1\"");
             if (row.Hidden) sb.Append(" hidden=\"1\"");
             
             if (row.Style != null)
             {
                 int rowStyleIdx = styleBuilder.GetStyleIndex(row.Style);
-                sb.Append($" s=\"{rowStyleIdx}\" customFormat=\"1\"");
+                sb.Append(" s=\"" + rowStyleIdx + "\" customFormat=\"1\"");
             }
             sb.Append(">");
 
@@ -748,20 +903,31 @@ public static class XlHelper
                 }
                 int styleIdx = styleBuilder.GetStyleIndex(finalStyle);
 
-                if (string.IsNullOrEmpty(val) && styleIdx == 0) continue;
-
                 string colRef = GetColumnName(c) + (r + 1);
-                sb.Append($"<c r=\"{colRef}\" s=\"{styleIdx}\"");
 
-                if (!string.IsNullOrEmpty(val))
+                if (cellVmMap.TryGetValue((r, c), out var vmIndex))
                 {
-                    sb.Append(" t=\"inlineStr\">");
-                    sb.Append($"<is><t>{EscapeXml(val)}</t></is>");
+                    // Modern Standard: t="e", vm="X", value="#VALUE!"
+                    sb.Append("<c r=\"" + colRef + "\" s=\"" + styleIdx + "\" t=\"e\" vm=\"" + vmIndex + "\">");
+                    sb.Append("<v>#VALUE!</v>");
                     sb.Append("</c>");
                 }
                 else
                 {
-                    sb.Append("/>");
+                    if (string.IsNullOrEmpty(val) && styleIdx == 0) continue;
+
+                    sb.Append("<c r=\"" + colRef + "\" s=\"" + styleIdx + "\"");
+
+                    if (!string.IsNullOrEmpty(val))
+                    {
+                        sb.Append(" t=\"inlineStr\">");
+                        sb.Append("<is><t>" + EscapeXml(val) + "</t></is>");
+                        sb.Append("</c>");
+                    }
+                    else
+                    {
+                        sb.Append("/>");
+                    }
                 }
             }
             sb.Append("</row>");
