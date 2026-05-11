@@ -87,7 +87,11 @@ foreach (var row in sheet)
 ```csharp
 var ws = wb.NewWorksheet("Images");
 ws.AddImage("logo.png", rowIndex: 1, columnIndex: 1, rowSpan: 5, columnSpan: 3);
+// NEW! Support place images into cell
+ws.AddImage("logo.png", rowIndex: 1, columnIndex: 1, rowSpan: 5, columnSpan: 3, placeInCell: true);
+
 XlHelper.Save("with_images.xlsx", wb);
+
 ```
 
 ## License
