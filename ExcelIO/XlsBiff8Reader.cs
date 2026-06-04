@@ -110,7 +110,7 @@ internal static class XlsBiff8Reader
                         var col = ReadUInt16(payload, 2);
                         var len = ReadUInt16(payload, 6);
                         var available = Math.Min((int)len, Math.Max(0, payload.Length - 8));
-                        var value = Encoding.Latin1.GetString(payload.Slice(8, available));
+                        var value = Encoding.GetEncoding(28591).GetString(payload.Slice(8, available));
                         SetCell(ws, row, col, value);
                     }
                     break;
@@ -197,7 +197,7 @@ internal static class XlsBiff8Reader
             offset += byteCount;
             var text = highByte
                 ? Encoding.Unicode.GetString(textBytes)
-                : Encoding.Latin1.GetString(textBytes);
+                : Encoding.GetEncoding(28591).GetString(textBytes);
             result.Add(text);
 
             var richBytes = richRunCount * 4;
@@ -242,7 +242,7 @@ internal static class XlsBiff8Reader
 
         var text = highByte
             ? Encoding.Unicode.GetString(source.Slice(offset, byteCount))
-            : Encoding.Latin1.GetString(source.Slice(offset, byteCount));
+            : Encoding.GetEncoding(28591).GetString(source.Slice(offset, byteCount));
         return (text, 2 + byteCount);
     }
 

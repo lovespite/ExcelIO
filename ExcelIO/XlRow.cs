@@ -122,6 +122,6 @@ public class XlRow : IReadOnlyList<string>
 
     public string ToString(char separator)
     {
-        return string.Join(separator, Cells.Select(c => c.Value));
+        return string.Join(separator.ToString(), Cells.Select(c => c.Value));
     }
 }

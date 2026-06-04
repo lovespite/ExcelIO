@@ -33,7 +33,7 @@ public static class XlHelper
 
     public static async Task<XlWorkbook> LoadAsync(Stream stream, string extension, XlLoadOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(stream);
+        if (stream is null) throw new ArgumentNullException(nameof(stream));
         return LoadByExtension(stream, extension, options);
     }
 
@@ -42,8 +42,8 @@ public static class XlHelper
     /// </summary>
     public static void Save(string filepath, XlWorkbook workbookData)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(filepath);
-        ArgumentNullException.ThrowIfNull(workbookData);
+        if (string.IsNullOrWhiteSpace(filepath)) throw new ArgumentException("File path cannot be null or whitespace.", nameof(filepath));
+        if (workbookData is null) throw new ArgumentNullException(nameof(workbookData));
 
         if (File.Exists(filepath)) File.Delete(filepath);
 
@@ -169,14 +169,14 @@ public static class XlHelper
 
     public static XlWorkbook Load(string filepath, XlLoadOptions? options = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(filepath);
+        if (string.IsNullOrWhiteSpace(filepath)) throw new ArgumentException("File path cannot be null or whitespace.", nameof(filepath));
         using var fs = new FileStream(filepath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         return LoadByExtension(fs, filepath, options);
     }
 
     public static XlWorkbook Load(Stream stream, XlLoadOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(stream);
+        if (stream is null) throw new ArgumentNullException(nameof(stream));
         return LoadBySignature(stream, options);
     }
 

@@ -147,14 +147,14 @@ public class XlWorksheet : IReadOnlyList<XlRow>
     {
         var row = new XlRow(this);
         row.AddRange(values);
-        Rows.AddRange(row);
+        Rows.Add(row);
     }
 
     public void AddRow(IEnumerable<string> values)
     {
         var row = new XlRow(this);
         row.AddRange(values);
-        Rows.AddRange(row);
+        Rows.Add(row);
     }
 
     public void AddRows(List<string[]> rows)
@@ -189,7 +189,7 @@ public class XlWorksheet : IReadOnlyList<XlRow>
 
     public XlWorksheetImage AddImage(string imagePath, int rowIndex, int columnIndex, int rowSpan = 1, int columnSpan = 1, bool placeInCell = false)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(imagePath);
+        if (string.IsNullOrWhiteSpace(imagePath)) throw new ArgumentException("Image path cannot be null or whitespace.", nameof(imagePath));
         if (!File.Exists(imagePath))
         {
             throw new FileNotFoundException("Image file not found.", imagePath);

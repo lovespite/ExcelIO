@@ -34,8 +34,8 @@ public sealed class XlWorksheetImage
 
     internal static XlWorksheetImage Create(byte[] imageBytes, string imageExtension, int rowIndex, int columnIndex, int rowSpan, int columnSpan, bool placeInCell = false)
     {
-        ArgumentNullException.ThrowIfNull(imageBytes);
-        ArgumentException.ThrowIfNullOrWhiteSpace(imageExtension);
+        if (imageBytes is null) throw new ArgumentNullException(nameof(imageBytes));
+        if (string.IsNullOrWhiteSpace(imageExtension)) throw new ArgumentException("Image extension cannot be null or whitespace.", nameof(imageExtension));
 
         if (imageBytes.Length == 0)
         {
@@ -70,7 +70,7 @@ public sealed class XlWorksheetImage
     private static string NormalizeExtension(string imageExtension)
     {
         var normalized = imageExtension.Trim();
-        if (normalized.StartsWith('.'))
+        if (normalized.StartsWith("."))
         {
             normalized = normalized[1..];
         }
