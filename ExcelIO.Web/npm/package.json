@@ -1,0 +1,35 @@
+{
+  "name": "excelio-web",
+  "version": "1.2.1",
+  "description": "ExcelIO WebAssembly — read and write Excel files (.xlsx, .xlsm, .xls) in the browser. Zero dependencies.",
+  "type": "module",
+  "main": "./dist/excelio.js",
+  "types": "./dist/excelio.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/excelio.js",
+      "types": "./dist/excelio.d.ts"
+    }
+  },
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "excel",
+    "xlsx",
+    "xls",
+    "xlsm",
+    "spreadsheet",
+    "wasm",
+    "webassembly",
+    "browser"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lovespite/ExcelIO.git",
+    "directory": "ExcelIO.Web/npm"
+  }
+}

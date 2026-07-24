@@ -1,0 +1,182 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', Calibri, sans-serif;
+  font-size: 12px;
+  color: #333;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Toolbar ── */
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #f3f3f3;
+  border-bottom: 1px solid #d0d0d0;
+  flex-shrink: 0;
+}
+
+.btn {
+  padding: 4px 14px;
+  border: 1px solid #aaa;
+  border-radius: 3px;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.btn:hover { background: #e8e8e8; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+#filename {
+  color: #555;
+  margin-left: 8px;
+}
+
+#error-msg {
+  color: #d00;
+  margin-left: 12px;
+  font-weight: bold;
+}
+
+/* ── Sheet Tabs ── */
+
+#sheet-tabs {
+  display: flex;
+  background: #e8e8e8;
+  border-bottom: 1px solid #c0c0c0;
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+
+.sheet-tab {
+  padding: 4px 16px;
+  border: 1px solid #c0c0c0;
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  background: #ddd;
+  cursor: pointer;
+  margin-right: 2px;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.sheet-tab:hover { background: #eee; }
+.sheet-tab.active {
+  background: #fff;
+  border-bottom-color: #fff;
+  font-weight: bold;
+}
+
+/* ── Grid ── */
+
+#grid-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+#grid-scroll {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+#grid {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+#grid th, #grid td {
+  border: 1px solid #d0d0d0;
+  padding: 2px 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  height: 22px;
+  min-width: 50px;
+  max-width: 300px;
+  position: relative;
+}
+
+/* Column headers */
+.col-header {
+  background: #f0f0f0;
+  text-align: center;
+  font-weight: normal;
+  color: #555;
+  font-size: 11px;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* Row headers */
+.row-header {
+  background: #f0f0f0;
+  text-align: center;
+  color: #555;
+  font-size: 11px;
+  user-select: none;
+  min-width: 40px !important;
+  width: 40px !important;
+}
+
+/* Corner cell */
+.corner-cell {
+  background: #e8e8e8;
+  min-width: 40px !important;
+  width: 40px !important;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 2;
+}
+
+/* Data cells */
+.data-cell {
+  cursor: cell;
+  user-select: none;
+}
+
+.data-cell.selected {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+  z-index: 0;
+}
+
+.data-cell.editing {
+  padding: 0;
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
+.data-cell input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 1px 3px;
+  background: #fff;
+}
+
+/* ── Empty state ── */
+
+#placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  font-size: 16px;
+  flex-direction: column;
+  gap: 8px;
+}

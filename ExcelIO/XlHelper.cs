@@ -38,7 +38,7 @@ public static class XlHelper
     }
 
     /// <summary>
-    /// 保存 Excel (OpenXML 格式)
+    /// 保存 Excel (OpenXML 格式) 到文件
     /// </summary>
     public static void Save(string filepath, XlWorkbook workbookData)
     {
@@ -47,10 +47,31 @@ public static class XlHelper
 
         if (File.Exists(filepath)) File.Delete(filepath);
 
+        using var fs = new FileStream(filepath, FileMode.Create);
+        SaveToArchive(fs, workbookData);
+    }
+
+    /// <summary>
+    /// 保存 Excel (OpenXML 格式) 到流
+    /// </summary>
+    public static void Save(Stream stream, XlWorkbook workbookData)
+    {
+        if (stream is null) throw new ArgumentNullException(nameof(stream));
+        if (workbookData is null) throw new ArgumentNullException(nameof(workbookData));
+        if (!stream.CanWrite) throw new ArgumentException("Stream must support writing.", nameof(stream));
+
+        SaveToArchive(stream, workbookData);
+    }
+
+    public static Task SaveAsync(Stream stream, XlWorkbook workbookData)
+        => Task.Run(() => Save(stream, workbookData));
+
+    private static void SaveToArchive(Stream stream, XlWorkbook workbookData)
+    {
         var drawingSheets = new List<(int SheetIndex, int DrawingIndex, XlWorksheet Sheet)>();
         var cellImages = new List<(XlWorksheet Sheet, XlWorksheetImage Image, int vmIndex, int richValueIndex, int imageIndex)>();
         var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        
+
         int drawingIndex = 1;
         int globalImageIndex = 1;
 
@@ -78,7 +99,7 @@ public static class XlHelper
                 cellImages.Add((sheet, img, currentCellImageCount + 1, currentCellImageCount, currentCellImageCount));
                 imageExtensions.Add(img.Extension);
             }
-            
+
             foreach (var img in floatingImages)
             {
                 imageExtensions.Add(img.Extension);
@@ -86,8 +107,7 @@ public static class XlHelper
         }
         var drawingSheetMap = drawingSheets.ToDictionary(x => x.SheetIndex, x => x.DrawingIndex);
 
-        using var fileStream = new FileStream(filepath, FileMode.Create);
-        using var archive = new ZipArchive(fileStream, ZipArchiveMode.Create);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true);
 
         // 1. 写入 [Content_Types].xml (定义文件类型)
         WriteEntry(archive, "[Content_Types].xml", GenerateContentTypes(workbookData.Worksheets.Count, drawingSheets.Count, cellImages.Count > 0, imageExtensions));
@@ -109,7 +129,7 @@ public static class XlHelper
             var sheet = workbookData.Worksheets[i];
             drawingSheetMap.TryGetValue(i + 1, out int sheetDrawingIndex);
             var path = "xl/worksheets/sheet" + (i + 1) + ".xml";
-            
+
             var sheetVmMap = cellImages.Where(x => x.Sheet == sheet)
                                        .ToDictionary(x => (x.Image.RowIndex, x.Image.ColumnIndex), x => x.vmIndex);
 
@@ -129,21 +149,21 @@ public static class XlHelper
             WriteEntry(archive, "xl/metadata.xml", GenerateMetadataXml(cellImages.Count));
             WriteEntry(archive, "xl/richData/rdrichvaluestructure.xml", GenerateRichValueStructureXml());
             WriteEntry(archive, "xl/richData/rdRichValueTypes.xml", GenerateRichValueTypesXml());
-            
+
             var rvParts = new List<RichValuePart>();
             var rvRelParts = new List<RichValueRelPart>();
-            
+
             for (int ci = 0; ci < cellImages.Count; ci++)
             {
                 var mediaFileName = "image" + globalImageIndex + "." + cellImages[ci].Image.Extension;
                 WriteBinaryEntry(archive, "xl/media/" + mediaFileName, cellImages[ci].Image.Bytes);
-                
+
                 rvParts.Add(new RichValuePart(cellImages[ci].richValueIndex, cellImages[ci].imageIndex));
                 rvRelParts.Add(new RichValueRelPart("rId" + (ci + 1), mediaFileName));
-                
+
                 globalImageIndex++;
             }
-            
+
             WriteEntry(archive, "xl/richData/rdrichvalue.xml", GenerateRichValueXml(rvParts));
             WriteEntry(archive, "xl/richData/richValueRel.xml", GenerateRichValueRelXml(rvRelParts));
             WriteEntry(archive, "xl/richData/_rels/richValueRel.xml.rels", GenerateRichValueRelRels(rvRelParts));

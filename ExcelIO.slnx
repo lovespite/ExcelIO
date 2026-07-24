@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="ExcelIO.Web/ExcelIO.Web.csproj" Id="50d1e32a-f75b-4041-8ea0-b092fcf6ea6f" />
   <Project Path="ExcelIO/ExcelIO.csproj" />
   <Project Path="ExcelIO.NetStandard/ExcelIO.NetStandard.csproj" />
   <Project Path="ExcelIO.Test/ExcelIO.Test.csproj" />
