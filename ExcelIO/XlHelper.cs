@@ -640,7 +640,7 @@ public static class XlHelper
 
     private static string GenerateMetadataXml(int cellImageCount)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: cellImageCount * 150 + 2048);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append("<metadata xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:xlrd=\"http://schemas.microsoft.com/office/spreadsheetml/2017/richdata\">");
         sb.Append("<metadataTypes count=\"1\"><metadataType name=\"XLRICHVALUE\" minSupportedVersion=\"120000\" copy=\"1\" pasteAll=\"1\" pasteValues=\"1\" merge=\"1\" splitFirst=\"1\" rowColShift=\"1\" clearFormats=\"1\" clearComments=\"1\" assign=\"1\" coerce=\"1\"/></metadataTypes>");
@@ -672,7 +672,7 @@ public static class XlHelper
 
     private static string GenerateRichValueXml(IReadOnlyList<RichValuePart> parts)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: parts.Count * 200 + 1024);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append("<rvData xmlns=\"http://schemas.microsoft.com/office/spreadsheetml/2017/richdata\" count=\"" + parts.Count + "\">");
         foreach (var part in parts)
@@ -687,7 +687,7 @@ public static class XlHelper
 
     private static string GenerateRichValueRelXml(IReadOnlyList<RichValueRelPart> parts)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: parts.Count * 200 + 1024);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append("<richValueRels xmlns=\"http://schemas.microsoft.com/office/spreadsheetml/2022/richvaluerel\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">");
         foreach (var part in parts)
@@ -700,7 +700,7 @@ public static class XlHelper
 
     private static string GenerateRichValueRelRels(IReadOnlyList<RichValueRelPart> parts)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: parts.Count * 150 + 512);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append("<Relationships xmlns=\"" + NsPkgRel + "\">");
         foreach (var part in parts)
@@ -738,7 +738,7 @@ public static class XlHelper
 
     private static string GenerateContentTypes(int sheetCount, int drawingCount, bool hasCellImages, IEnumerable<string> imageExtensions)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: (sheetCount + drawingCount) * 150 + 1024);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
         sb.Append("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>");
@@ -778,7 +778,7 @@ public static class XlHelper
 
     private static string GenerateWorkbookXml(List<XlWorksheet> sheets)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: sheets.Count * 100 + 512);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append($"<workbook xmlns=\"{NsMain}\" xmlns:r=\"{NsRel}\">");
         sb.Append("<sheets>");
@@ -794,7 +794,7 @@ public static class XlHelper
 
     private static string GenerateWorkbookRels(int sheetCount, bool hasCellImages)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: sheetCount * 200 + 512);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append("<Relationships xmlns=\"" + NsPkgRel + "\">");
         for (int i = 1; i <= sheetCount; i++)
@@ -842,7 +842,7 @@ public static class XlHelper
 
     private static string GenerateDrawingXml(IReadOnlyList<DrawingImagePart> drawingImageParts)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: drawingImageParts.Count * 512 + 1024);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append($"<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"{NsRel}\">");
 
@@ -871,7 +871,7 @@ public static class XlHelper
 
     private static string GenerateDrawingRels(IReadOnlyList<DrawingImagePart> drawingImageParts)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: 2048);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append($"<Relationships xmlns=\"{NsPkgRel}\">");
         foreach (var part in drawingImageParts)
@@ -897,7 +897,7 @@ public static class XlHelper
 
     private static string GenerateSheetXml(XlWorksheet sheet, XlsxStyleBuilder styleBuilder, Dictionary<(int Row, int Col), int> cellVmMap, string? drawingRelationshipId = null)
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: sheet.Rows.Count * 150);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         var namespaces = string.IsNullOrEmpty(drawingRelationshipId) ? "xmlns=\"" + NsMain + "\"" : "xmlns=\"" + NsMain + "\" xmlns:r=\"" + NsRel + "\"";
         sb.Append("<worksheet " + namespaces + ">");
@@ -1046,7 +1046,25 @@ public static class XlHelper
         return sb.ToString();
     }
 
+    // Column name cache for first 1024 columns (covers 99% use cases)
+    private static readonly string[] ColumnNameCache = InitColumnNameCache();
+
+    private static string[] InitColumnNameCache()
+    {
+        var cache = new string[1024];
+        for (int i = 0; i < 1024; i++)
+            cache[i] = GetColumnNameSlow(i);
+        return cache;
+    }
+
     private static string GetColumnName(int index)
+    {
+        if (index >= 0 && index < ColumnNameCache.Length)
+            return ColumnNameCache[index];
+        return GetColumnNameSlow(index);
+    }
+
+    private static string GetColumnNameSlow(int index)
     {
         string columnName = "";
         while (index >= 0)

@@ -9,21 +9,58 @@ internal class XlsxStyleBuilder
     private readonly List<XlFill> _fills = [];
     private readonly List<XlBorder> _borders = [];
 
+    // Dictionary for O(1) lookup
+    private readonly Dictionary<XlStyle, int> _styleIndexMap = new();
+    private readonly Dictionary<XlFont, int> _fontIndexMap = new();
+    private readonly Dictionary<XlFill, int> _fillIndexMap = new();
+    private readonly Dictionary<XlBorder, int> _borderIndexMap = new();
+
     public XlsxStyleBuilder()
     {
         // Default styles (index 0)
-        _fonts.Add(new XlFont()); // Default font
-        _fills.Add(new XlFill { PatternType = "none" }); // Default fill 0: none
-        _fills.Add(new XlFill { PatternType = "gray125" }); // Default fill 1: gray125
-        _borders.Add(new XlBorder()); // Default border
-        _styles.Add(new XlStyle()); // Default XF
+        var defaultFont = new XlFont();
+        _fonts.Add(defaultFont);
+        _fontIndexMap[defaultFont] = 0;
+
+        var defaultFill0 = new XlFill { PatternType = "none" };
+        _fills.Add(defaultFill0);
+        _fillIndexMap[defaultFill0] = 0;
+
+        var defaultFill1 = new XlFill { PatternType = "gray125" };
+        _fills.Add(defaultFill1);
+        _fillIndexMap[defaultFill1] = 1;
+
+        var defaultBorder = new XlBorder();
+        _borders.Add(defaultBorder);
+        _borderIndexMap[defaultBorder] = 0;
+
+        var defaultStyle = new XlStyle();
+        _styles.Add(defaultStyle);
+        _styleIndexMap[defaultStyle] = 0;
     }
 
     public int GetStyleIndex(XlStyle? style)
     {
         if (style == null) return 0;
 
-        // Simplify style for matching (only properties that affect styles.xml)
+        // Check if style already exists
+        if (_styleIndexMap.TryGetValue(style, out var existingIndex))
+            return existingIndex;
+
+        // New style: get or create component IDs
+        GetOrAddFont(style);
+        GetOrAddFill(style);
+        GetOrAddBorder(style);
+
+        // Register new style
+        int index = _styles.Count;
+        _styles.Add(style);
+        _styleIndexMap[style] = index;
+        return index;
+    }
+
+    private int GetOrAddFont(XlStyle style)
+    {
         var font = new XlFont
         {
             Name = style.FontName ?? "Calibri",
@@ -33,34 +70,47 @@ internal class XlsxStyleBuilder
             Italic = style.Italic
         };
 
+        if (_fontIndexMap.TryGetValue(font, out var index))
+            return index;
+
+        index = _fonts.Count;
+        _fonts.Add(font);
+        _fontIndexMap[font] = index;
+        return index;
+    }
+
+    private int GetOrAddFill(XlStyle style)
+    {
         var fill = new XlFill
         {
             PatternType = style.FillColor != null ? "solid" : "none",
             ForegroundColor = style.FillColor
         };
 
+        if (_fillIndexMap.TryGetValue(fill, out var index))
+            return index;
+
+        index = _fills.Count;
+        _fills.Add(fill);
+        _fillIndexMap[fill] = index;
+        return index;
+    }
+
+    private int GetOrAddBorder(XlStyle style)
+    {
         var border = style.Border ?? new XlBorder();
 
-        int fontId = GetOrAdd(_fonts, font);
-        int fillId = GetOrAdd(_fills, fill);
-        int borderId = GetOrAdd(_borders, border);
+        if (_borderIndexMap.TryGetValue(border, out var index))
+            return index;
 
-        // Check if this combination already exists
-        for (int i = 0; i < _styles.Count; i++)
-        {
-            var s = _styles[i];
-            if (fontId == GetFontId(s) && fillId == GetFillId(s) && borderId == GetBorderId(s) &&
-                Equals(s.Alignment, style.Alignment))
-            {
-                return i;
-            }
-        }
-
-        _styles.Add(style);
-        return _styles.Count - 1;
+        index = _borders.Count;
+        _borders.Add(border);
+        _borderIndexMap[border] = index;
+        return index;
     }
 
-    private int GetFontId(XlStyle style)
+    // Helper methods for GenerateStylesXml to lookup component IDs
+    private int GetFontIdForStyle(XlStyle style)
     {
         var font = new XlFont
         {
@@ -70,38 +120,28 @@ internal class XlsxStyleBuilder
             Bold = style.Bold,
             Italic = style.Italic
         };
-        return _fonts.IndexOf(font);
+        return _fontIndexMap.TryGetValue(font, out var id) ? id : 0;
     }
 
-    private int GetFillId(XlStyle style)
+    private int GetFillIdForStyle(XlStyle style)
     {
         var fill = new XlFill
         {
             PatternType = style.FillColor != null ? "solid" : "none",
             ForegroundColor = style.FillColor
         };
-        return _fills.IndexOf(fill);
+        return _fillIndexMap.TryGetValue(fill, out var id) ? id : 0;
     }
 
-    private int GetBorderId(XlStyle style)
+    private int GetBorderIdForStyle(XlStyle style)
     {
-        return _borders.IndexOf(style.Border ?? new XlBorder());
-    }
-
-    private static int GetOrAdd<T>(List<T> list, T item) where T : IEquatable<T>
-    {
-        int index = list.IndexOf(item);
-        if (index == -1)
-        {
-            list.Add(item);
-            return list.Count - 1;
-        }
-        return index;
+        var border = style.Border ?? new XlBorder();
+        return _borderIndexMap.TryGetValue(border, out var id) ? id : 0;
     }
 
     public string GenerateStylesXml()
     {
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(capacity: (_fonts.Count + _fills.Count + _borders.Count + _styles.Count) * 150 + 2048);
         sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
         sb.Append("<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
 
@@ -155,9 +195,9 @@ internal class XlsxStyleBuilder
         for (int i = 0; i < _styles.Count; i++)
         {
             var style = _styles[i];
-            int fontId = GetFontId(style);
-            int fillId = GetFillId(style);
-            int borderId = GetBorderId(style);
+            int fontId = GetFontIdForStyle(style);
+            int fillId = GetFillIdForStyle(style);
+            int borderId = GetBorderIdForStyle(style);
 
             sb.Append($"<xf numFmtId=\"0\" fontId=\"{fontId}\" fillId=\"{fillId}\" borderId=\"{borderId}\" xfId=\"0\"");
             if (fontId > 0) sb.Append(" applyFont=\"1\"");
