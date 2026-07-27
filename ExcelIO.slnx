@@ -4,4 +4,5 @@
   <Project Path="ExcelIO.NetStandard/ExcelIO.NetStandard.csproj" />
   <Project Path="ExcelIO.Test/ExcelIO.Test.csproj" />
   <Project Path="ExcelIO.NetStandard.Test/ExcelIO.NetStandard.Test.csproj" />
+  <Project Path="ExcelIO.Benchmark/ExcelIO.Benchmark.csproj" />
 </Solution>
