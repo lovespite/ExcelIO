@@ -19,10 +19,30 @@ public class XlCell
         {
             if (IsNull) return;
             _value = value;
+            Formula = null; // Clear formula when setting literal value
         }
     }
 
     public XlStyle? Style { get; set; }
+
+    /// <summary>
+    /// Formula text (e.g., "=SUM(A1:A2)"). Null if this is not a formula cell.
+    /// </summary>
+    public string? Formula { get; set; }
+
+    /// <summary>
+    /// True if this cell contains a formula.
+    /// </summary>
+    public bool HasFormula => !string.IsNullOrEmpty(Formula);
+
+    /// <summary>
+    /// Set formula and cached value.
+    /// </summary>
+    public void SetFormula(string formula, string cachedValue = "")
+    {
+        Formula = formula;
+        _value = cachedValue;
+    }
 
     public override string ToString()
     {

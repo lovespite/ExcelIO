@@ -59,6 +59,9 @@ export interface ExcelIO {
   /** Cell text at (row, col). Returns empty string if out of range. */
   getCellValue(row: number, col: number): string;
 
+  /** Cell formula at (row, col), e.g. "=SUM(A1:A2)". Empty string if not a formula. */
+  getCellFormula(row: number, col: number): string;
+
   /** Set cell text. Creates the row and cell if they don't exist. */
   setCellValue(row: number, col: number, value: string): void;
 

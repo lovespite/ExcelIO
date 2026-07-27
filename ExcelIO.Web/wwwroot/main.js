@@ -24,6 +24,7 @@ window.excelIO = {
     getRowCount:      api.GetRowCount,
     getColCount:      api.GetColCount,
     getCellValue:     api.GetCellValue,
+    getCellFormula:   api.GetCellFormula,
     setCellValue:     api.SetCellValue,
     addRow:           api.AddRow,
     clearRows:        api.ClearRows,

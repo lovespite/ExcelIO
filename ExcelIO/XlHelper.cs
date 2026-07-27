@@ -333,6 +333,7 @@ public static class XlHelper
             result.Worksheets.Add(ws);
 
             string? drawingRid = null;
+            var sharedFormulas = new Dictionary<int, (string MasterFormula, int MasterRow, int MasterCol)>();
 
             using (var entryStream = sheetEntry.Open())
             using (var reader = XmlReader.Create(entryStream))
@@ -398,36 +399,85 @@ public static class XlHelper
                             var currentRow = ws.Rows.LastOrDefault();
                             if (currentRow == null) continue;
 
+                            var cellRef = reader.GetAttribute("r");
                             var type = reader.GetAttribute("t");
                             var sIdxStr = reader.GetAttribute("s");
                             XlStyle? cellStyle = null;
                             if (options.LoadStyles && int.TryParse(sIdxStr, out var sIdx) && sIdx < styles.Count) cellStyle = styles[sIdx];
 
                             string cellValue = string.Empty;
+                            string? formula = null;
+                            string? fType = null;
+                            string? sharedRef = null;
+                            int? sharedIdx = null;
+
                             using (var subReader = reader.ReadSubtree())
                             {
-                                while (subReader.Read())
+                                // Note: ReadElementContentAsString advances the reader past the
+                                // element, so we must re-check the current node instead of blindly
+                                // calling Read() (a cell may have both <f> and <v> children).
+                                subReader.Read();
+                                while (!subReader.EOF)
                                 {
-                                    if (subReader.NodeType == XmlNodeType.Element)
+                                    if (subReader.NodeType != XmlNodeType.Element)
                                     {
-                                        if (subReader.LocalName == "v")
-                                        {
-                                            var raw = subReader.ReadElementContentAsString();
-                                            if (type == "s" && int.TryParse(raw, out int idx) && idx < sharedStrings.Count)
-                                                cellValue = sharedStrings[idx];
-                                            else if (type == "b")
-                                                cellValue = raw == "1" ? "TRUE" : "FALSE";
-                                            else
-                                                cellValue = raw;
-                                        }
-                                        else if (subReader.LocalName == "t")
-                                        {
-                                            cellValue = subReader.ReadElementContentAsString();
-                                        }
+                                        subReader.Read();
+                                        continue;
+                                    }
+
+                                    if (subReader.LocalName == "v")
+                                    {
+                                        var raw = subReader.ReadElementContentAsString();
+                                        if (type == "s" && int.TryParse(raw, out int idx) && idx < sharedStrings.Count)
+                                            cellValue = sharedStrings[idx];
+                                        else if (type == "b")
+                                            cellValue = raw == "1" ? "TRUE" : "FALSE";
+                                        else
+                                            cellValue = raw;
+                                    }
+                                    else if (subReader.LocalName == "t")
+                                    {
+                                        cellValue = subReader.ReadElementContentAsString();
+                                    }
+                                    else if (subReader.LocalName == "f")
+                                    {
+                                        fType = subReader.GetAttribute("t");
+                                        sharedRef = subReader.GetAttribute("ref");
+                                        var siStr = subReader.GetAttribute("si");
+                                        if (int.TryParse(siStr, out var si)) sharedIdx = si;
+                                        formula = subReader.ReadElementContentAsString();
+                                    }
+                                    else
+                                    {
+                                        subReader.Read();
                                     }
                                 }
                             }
-                            currentRow.Cells.Add(new XlCell(currentRow) { Value = cellValue, Style = cellStyle });
+
+                            // Handle shared formulas
+                            if (!string.IsNullOrEmpty(formula) && fType == "shared" && !string.IsNullOrEmpty(sharedRef) && sharedIdx.HasValue)
+                            {
+                                // Master shared formula: record it
+                                if (!sharedFormulas.ContainsKey(sharedIdx.Value) && !string.IsNullOrEmpty(cellRef))
+                                {
+                                    var (masterRow, masterCol) = ParseCellRef(cellRef);
+                                    sharedFormulas[sharedIdx.Value] = (formula!, masterRow, masterCol);
+                                }
+                            }
+                            else if (string.IsNullOrEmpty(formula) && fType == "shared" && sharedIdx.HasValue && !string.IsNullOrEmpty(cellRef))
+                            {
+                                // Child shared formula: translate from master
+                                if (sharedFormulas.TryGetValue(sharedIdx.Value, out var master))
+                                {
+                                    var (currentRowIdx, currentColIdx) = ParseCellRef(cellRef);
+                                    var rowOffset = currentRowIdx - master.MasterRow;
+                                    var colOffset = currentColIdx - master.MasterCol;
+                                    formula = TranslateSharedFormula(master.MasterFormula, rowOffset, colOffset);
+                                }
+                            }
+
+                            var cell = new XlCell(currentRow) { Value = cellValue, Style = cellStyle, Formula = formula };
+                            currentRow.Cells.Add(cell);
                         }
                         else if (reader.LocalName == "drawing")
                         {
@@ -932,6 +982,29 @@ public static class XlHelper
                     sb.Append("<v>#VALUE!</v>");
                     sb.Append("</c>");
                 }
+                else if (cell.HasFormula)
+                {
+                    // Formula cell: emit <f>formula</f><v>cached_value</v>
+                    sb.Append("<c r=\"" + colRef + "\" s=\"" + styleIdx + "\"");
+
+                    // Determine type based on cached value
+                    bool isNumeric = double.TryParse(val, out _);
+                    if (!isNumeric && !string.IsNullOrEmpty(val))
+                        sb.Append(" t=\"str\"");
+
+                    sb.Append("><f>");
+                    sb.Append(EscapeXml(cell.Formula!));
+                    sb.Append("</f>");
+
+                    if (!string.IsNullOrEmpty(val))
+                    {
+                        sb.Append("<v>");
+                        sb.Append(EscapeXml(val));
+                        sb.Append("</v>");
+                    }
+
+                    sb.Append("</c>");
+                }
                 else
                 {
                     if (string.IsNullOrEmpty(val) && styleIdx == 0) continue;
@@ -992,6 +1065,71 @@ public static class XlHelper
                   .Replace(">", "&gt;")
                   .Replace("\"", "&quot;")
                   .Replace("'", "&apos;");
+    }
+
+    /// <summary>
+    /// Parse cell reference like "A1" to (row, col) zero-based indices.
+    /// </summary>
+    private static (int Row, int Col) ParseCellRef(string cellRef)
+    {
+        int colEnd = 0;
+        while (colEnd < cellRef.Length && char.IsLetter(cellRef[colEnd]))
+            colEnd++;
+
+        var colPart = cellRef.Substring(0, colEnd);
+        var rowPart = cellRef.Substring(colEnd);
+
+        int col = 0;
+        foreach (char c in colPart)
+        {
+            col = col * 26 + (c - 'A' + 1);
+        }
+        col -= 1; // Convert to zero-based
+
+        int row = int.Parse(rowPart) - 1; // Convert to zero-based
+        return (row, col);
+    }
+
+    /// <summary>
+    /// Translate a shared formula by applying row/column offsets.
+    /// Handles relative references (A1) and absolute references ($A$1, $A1, A$1).
+    /// </summary>
+    private static string TranslateSharedFormula(string masterFormula, int rowOffset, int colOffset)
+    {
+        if (rowOffset == 0 && colOffset == 0)
+            return masterFormula;
+
+        var pattern = @"(\$?)([A-Z]+)(\$?)(\d+)";
+        return System.Text.RegularExpressions.Regex.Replace(masterFormula, pattern, match =>
+        {
+            var colAbs = match.Groups[1].Value;
+            var colPart = match.Groups[2].Value;
+            var rowAbs = match.Groups[3].Value;
+            var rowPart = match.Groups[4].Value;
+
+            // Parse column
+            int col = 0;
+            foreach (char c in colPart)
+            {
+                col = col * 26 + (c - 'A' + 1);
+            }
+            col -= 1;
+
+            // Parse row
+            int row = int.Parse(rowPart) - 1;
+
+            // Apply offset if not absolute
+            if (string.IsNullOrEmpty(colAbs))
+                col += colOffset;
+            if (string.IsNullOrEmpty(rowAbs))
+                row += rowOffset;
+
+            // Convert back to A1 notation
+            string newColPart = GetColumnName(col);
+            string newRowPart = (row + 1).ToString();
+
+            return colAbs + newColPart + rowAbs + newRowPart;
+        });
     }
 
     #endregion

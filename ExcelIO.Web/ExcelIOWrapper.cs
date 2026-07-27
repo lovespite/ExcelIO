@@ -110,6 +110,18 @@ public static partial class ExcelIOWrapper
     }
 
     [JSExport]
+    public static string GetCellFormula(int row, int col)
+    {
+        var sheet = ActiveSheet;
+        if (sheet is null || row < 0 || row >= sheet.Rows.Count)
+            return "";
+        var r = sheet.Rows[row];
+        if (col < 0 || col >= r.Cells.Count)
+            return "";
+        return r.Cells[col].Formula ?? "";
+    }
+
+    [JSExport]
     public static void SetCellValue(int row, int col, string value)
     {
         var sheet = ActiveSheet;

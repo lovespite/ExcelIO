@@ -61,6 +61,9 @@ function init(config = {}) {
       getCellValue(row, col) {
         return api.GetCellValue(row, col);
       },
+      getCellFormula(row, col) {
+        return api.GetCellFormula(row, col);
+      },
       setCellValue(row, col, value) {
         // WASM interop requires explicitly passing string for the value param
         api.SetCellValue(row, col, String(value));
