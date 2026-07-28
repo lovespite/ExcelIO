@@ -954,6 +954,9 @@ public static class XlHelper
 
         sb.Append("<sheetData>");
 
+        // Shared formula optimization
+        var sharedMap = XlSharedFormulaOptimizer.Build(sheet);
+
         for (int r = 0; r < sheet.Rows.Count; r++)
         {
             var row = sheet.Rows[r];
@@ -992,6 +995,9 @@ public static class XlHelper
                 }
                 else if (cell.HasFormula)
                 {
+                    SharedFormulaEntry? shared = null;
+                    sharedMap?.TryGetValue((r, c), out shared);
+
                     // Formula cell: emit <f>formula</f><v>cached_value</v>
                     sb.Append("<c r=\"" + colRef + "\" s=\"" + styleIdx + "\"");
 
@@ -1000,9 +1006,27 @@ public static class XlHelper
                     if (!isNumeric && !string.IsNullOrEmpty(val))
                         sb.Append(" t=\"str\"");
 
-                    sb.Append("><f>");
-                    sb.Append(EscapeXml(cell.Formula!));
-                    sb.Append("</f>");
+                    sb.Append(">");
+
+                    if (shared is not null)
+                    {
+                        if (shared.IsMaster)
+                        {
+                            sb.Append("<f t=\"shared\" ref=\"" + shared.Ref + "\" si=\"" + shared.Si + "\">");
+                            sb.Append(EscapeXml(shared.Formula!));
+                            sb.Append("</f>");
+                        }
+                        else
+                        {
+                            sb.Append("<f t=\"shared\" si=\"" + shared.Si + "\"/>");
+                        }
+                    }
+                    else
+                    {
+                        sb.Append("<f>");
+                        sb.Append(EscapeXml(cell.Formula!));
+                        sb.Append("</f>");
+                    }
 
                     if (!string.IsNullOrEmpty(val))
                     {
