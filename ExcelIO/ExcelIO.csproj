@@ -22,4 +22,8 @@
         <!-- Include README in the package -->
         <None Include="..\README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="ExcelIO.Formula" />
+    </ItemGroup>
 </Project>

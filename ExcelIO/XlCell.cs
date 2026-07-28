@@ -24,6 +24,11 @@ public class XlCell
         }
     }
 
+    internal void SetCalculatedValue(string value)
+    {
+        _value = value;
+    }
+
     /// <summary>
     /// Internal hook for formula engine dirty-tracking. Set by ExcelIO.Formula on init.
     /// </summary>
