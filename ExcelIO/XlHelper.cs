@@ -14,6 +14,12 @@ public static class XlHelper
 
     public static IFormulaEngine? FormulaEngine { get; set; }
 
+    /// <summary>
+    /// Hook for decompiling BIFF8 formula bytecode to A1-notation strings.
+    /// Set by ExcelIO.Formula on init.
+    /// </summary>
+    public static Func<byte[], string>? Biff8FormulaDecompiler { get; set; }
+
     public static bool IsXlsxFile(string filepath)
     {
         var ext = Path.GetExtension(filepath);

@@ -16,6 +16,9 @@ public sealed class FormulaEngine : IFormulaEngine
         BuiltinFunctions.RegisterAll(_functions);
         _evaluator = new FormulaEvaluator(_functions);
         XlCell.OnValueChanged += OnCellValueChanged;
+
+        // Wire up BIFF8 formula decompiler
+        XlHelper.Biff8FormulaDecompiler ??= Biff8FormulaReader.Decompile;
     }
 
     public string? Evaluate(XlCell cell, IFormulaContext context)
