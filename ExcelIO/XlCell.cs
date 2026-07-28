@@ -20,8 +20,14 @@ public class XlCell
             if (IsNull) return;
             _value = value;
             Formula = null; // Clear formula when setting literal value
+            OnValueChanged?.Invoke(this);
         }
     }
+
+    /// <summary>
+    /// Internal hook for formula engine dirty-tracking. Set by ExcelIO.Formula on init.
+    /// </summary>
+    internal static Action<XlCell>? OnValueChanged { get; set; }
 
     public XlStyle? Style { get; set; }
 

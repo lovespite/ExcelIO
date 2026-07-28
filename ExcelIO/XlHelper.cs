@@ -12,6 +12,8 @@ public static class XlHelper
     private const string NsRel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     private const string NsPkgRel = "http://schemas.openxmlformats.org/package/2006/relationships";
 
+    public static IFormulaEngine? FormulaEngine { get; set; }
+
     public static bool IsXlsxFile(string filepath)
     {
         var ext = Path.GetExtension(filepath);
@@ -1046,109 +1048,11 @@ public static class XlHelper
         return sb.ToString();
     }
 
-    // Column name cache for first 1024 columns (covers 99% use cases)
-    private static readonly string[] ColumnNameCache = InitColumnNameCache();
-
-    private static string[] InitColumnNameCache()
-    {
-        var cache = new string[1024];
-        for (int i = 0; i < 1024; i++)
-            cache[i] = GetColumnNameSlow(i);
-        return cache;
-    }
-
-    private static string GetColumnName(int index)
-    {
-        if (index >= 0 && index < ColumnNameCache.Length)
-            return ColumnNameCache[index];
-        return GetColumnNameSlow(index);
-    }
-
-    private static string GetColumnNameSlow(int index)
-    {
-        string columnName = "";
-        while (index >= 0)
-        {
-            columnName = (char)('A' + (index % 26)) + columnName;
-            index = (index / 26) - 1;
-        }
-        return columnName;
-    }
-
-    private static string EscapeXml(string txt)
-    {
-        if (string.IsNullOrEmpty(txt)) return "";
-        return txt.Replace("&", "&amp;")
-                  .Replace("<", "&lt;")
-                  .Replace(">", "&gt;")
-                  .Replace("\"", "&quot;")
-                  .Replace("'", "&apos;");
-    }
-
-    /// <summary>
-    /// Parse cell reference like "A1" to (row, col) zero-based indices.
-    /// </summary>
-    private static (int Row, int Col) ParseCellRef(string cellRef)
-    {
-        int colEnd = 0;
-        while (colEnd < cellRef.Length && char.IsLetter(cellRef[colEnd]))
-            colEnd++;
-
-        var colPart = cellRef.Substring(0, colEnd);
-        var rowPart = cellRef.Substring(colEnd);
-
-        int col = 0;
-        foreach (char c in colPart)
-        {
-            col = col * 26 + (c - 'A' + 1);
-        }
-        col -= 1; // Convert to zero-based
-
-        int row = int.Parse(rowPart) - 1; // Convert to zero-based
-        return (row, col);
-    }
-
-    /// <summary>
-    /// Translate a shared formula by applying row/column offsets.
-    /// Handles relative references (A1) and absolute references ($A$1, $A1, A$1).
-    /// </summary>
+    private static string GetColumnName(int index) => XlFormulaUtil.GetColumnName(index);
+    private static string EscapeXml(string txt) => XlFormulaUtil.EscapeXml(txt);
+    private static (int Row, int Col) ParseCellRef(string cellRef) => XlFormulaUtil.ParseCellRef(cellRef);
     private static string TranslateSharedFormula(string masterFormula, int rowOffset, int colOffset)
-    {
-        if (rowOffset == 0 && colOffset == 0)
-            return masterFormula;
-
-        var pattern = @"(\$?)([A-Z]+)(\$?)(\d+)";
-        return System.Text.RegularExpressions.Regex.Replace(masterFormula, pattern, match =>
-        {
-            var colAbs = match.Groups[1].Value;
-            var colPart = match.Groups[2].Value;
-            var rowAbs = match.Groups[3].Value;
-            var rowPart = match.Groups[4].Value;
-
-            // Parse column
-            int col = 0;
-            foreach (char c in colPart)
-            {
-                col = col * 26 + (c - 'A' + 1);
-            }
-            col -= 1;
-
-            // Parse row
-            int row = int.Parse(rowPart) - 1;
-
-            // Apply offset if not absolute
-            if (string.IsNullOrEmpty(colAbs))
-                col += colOffset;
-            if (string.IsNullOrEmpty(rowAbs))
-                row += rowOffset;
-
-            // Convert back to A1 notation
-            string newColPart = GetColumnName(col);
-            string newRowPart = (row + 1).ToString();
-
-            return colAbs + newColPart + rowAbs + newRowPart;
-        });
-    }
+        => XlFormulaUtil.TranslateSharedFormula(masterFormula, rowOffset, colOffset);
 
     #endregion
 }

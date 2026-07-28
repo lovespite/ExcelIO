@@ -58,7 +58,16 @@ public class XlWorksheet : IReadOnlyList<XlRow>
         {
             var sourceRow = Rows[rIndex];
             var destRow = new XlRow(dest);
-            destRow.AddRange(sourceRow.Cells.Select(c => c.Value));
+            foreach (var c in sourceRow.Cells)
+            {
+                var newCell = new XlCell(destRow);
+                if (c.HasFormula)
+                    newCell.SetFormula(c.Formula!, c.Value);
+                else
+                    newCell.Value = c.Value;
+                newCell.Style = c.Style;
+                destRow.Cells.Add(newCell);
+            }
             if (targetIndex >= 0 && targetIndex < dest.Rows.Count)
             {
                 dest.Rows.Insert(targetIndex, destRow);
