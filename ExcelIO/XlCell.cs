@@ -24,7 +24,7 @@ public class XlCell
         }
     }
 
-    internal void SetCalculatedValue(string value)
+    public void SetCalculatedValue(string value)
     {
         _value = value;
     }
@@ -32,7 +32,7 @@ public class XlCell
     /// <summary>
     /// Internal hook for formula engine dirty-tracking. Set by ExcelIO.Formula on init.
     /// </summary>
-    internal static Action<XlCell>? OnValueChanged { get; set; }
+    public static Action<XlCell>? OnValueChanged { get; set; }
 
     public XlStyle? Style { get; set; }
 
