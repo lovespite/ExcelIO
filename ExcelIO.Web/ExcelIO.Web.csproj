@@ -10,4 +10,14 @@
   <ItemGroup>
     <ProjectReference Include="..\ExcelIO.NetStandard\ExcelIO.NetStandard.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\ExcelIO.Formula\Ast.cs" />
+    <Compile Include="..\ExcelIO.Formula\Biff8FormulaReader.cs" />
+    <Compile Include="..\ExcelIO.Formula\BuiltinFunctions.cs" />
+    <Compile Include="..\ExcelIO.Formula\DependencyGraph.cs" />
+    <Compile Include="..\ExcelIO.Formula\FormulaEngine.cs" />
+    <Compile Include="..\ExcelIO.Formula\FormulaEvaluator.cs" />
+    <Compile Include="..\ExcelIO.Formula\FormulaParser.cs" />
+    <Compile Include="..\ExcelIO.Formula\FunctionRegistry.cs" />
+  </ItemGroup>
 </Project>

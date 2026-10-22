@@ -1,10 +1,12 @@
 <Solution>
-  <Project Path="ExcelIO.Web/ExcelIO.Web.csproj" Id="50d1e32a-f75b-4041-8ea0-b092fcf6ea6f" />
-  <Project Path="ExcelIO/ExcelIO.csproj" />
+  <Project Path="ExcelIO.Benchmark/ExcelIO.Benchmark.csproj" />
+  <Project Path="ExcelIO.Formula.Test/ExcelIO.Formula.Test.csproj" />
+  <Project Path="ExcelIO.Formula/ExcelIO.Formula.csproj" />
+  <Project Path="ExcelIO.NetStandard.Test/ExcelIO.NetStandard.Test.csproj" />
   <Project Path="ExcelIO.NetStandard/ExcelIO.NetStandard.csproj" />
   <Project Path="ExcelIO.Test/ExcelIO.Test.csproj" />
-  <Project Path="ExcelIO.NetStandard.Test/ExcelIO.NetStandard.Test.csproj" />
-  <Project Path="ExcelIO.Benchmark/ExcelIO.Benchmark.csproj" />
-  <Project Path="ExcelIO.Formula/ExcelIO.Formula.csproj" />
-  <Project Path="ExcelIO.Formula.Test/ExcelIO.Formula.Test.csproj" />
+  <Project Path="ExcelIO.Web/ExcelIO.Web.csproj" Id="50d1e32a-f75b-4041-8ea0-b092fcf6ea6f" />
+  <Project Path="ExcelIO/ExcelIO.csproj">
+    <Build Solution="Release|*" Project="false" />
+  </Project>
 </Solution>

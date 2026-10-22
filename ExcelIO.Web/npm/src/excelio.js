@@ -103,6 +103,58 @@ function init(config = {}) {
       getSheetTabColor() {
         return api.GetSheetTabColor();
       },
+
+      // ── Formula ──
+      setCellFormula(row, col, formula) {
+        api.SetCellFormula(row, col, String(formula));
+      },
+      calculateSheet() {
+        api.CalculateSheet();
+      },
+      calculateWorkbook() {
+        api.CalculateWorkbook();
+      },
+      getCircularReferences() {
+        return api.GetCircularReferences();
+      },
+
+      // ── Style setters ──
+      setCellStyle(row, col, styleJson) {
+        api.SetCellStyle(row, col, String(styleJson));
+      },
+      setRowStyle(row, styleJson) {
+        api.SetRowStyle(row, String(styleJson));
+      },
+      setColStyle(col, styleJson) {
+        api.SetColStyle(col, String(styleJson));
+      },
+
+      // ── Layout setters ──
+      setColumnWidth(col, width) {
+        api.SetColumnWidth(col, width);
+      },
+      setRowHeight(row, height) {
+        api.SetRowHeight(row, height);
+      },
+
+      // ── Merge ──
+      mergeCells(rangeRef) {
+        api.MergeCells(String(rangeRef));
+      },
+      unmergeCells(rangeRef) {
+        api.UnmergeCells(String(rangeRef));
+      },
+
+      // ── Sheet management ──
+      addSheet(name) {
+        return api.AddSheet(String(name));
+      },
+      deleteSheet(index) {
+        return api.DeleteSheet(index);
+      },
+      renameSheet(index, newName) {
+        return api.RenameSheet(index, String(newName));
+      },
     };
 
     await dotnet.run();

@@ -97,6 +97,58 @@ export interface ExcelIO {
 
   /** Active sheet tab color as CSS hex (#RRGGBB), or empty string. */
   getSheetTabColor(): string;
+
+  // ── Formula ──
+
+  /** Set or clear a cell's formula. */
+  setCellFormula(row: number, col: number, formula: string): void;
+
+  /** Run formula calculation on the active sheet. */
+  calculateSheet(): void;
+
+  /** Run formula calculation on all sheets. */
+  calculateWorkbook(): void;
+
+  /** Get circular reference info as a JSON string. */
+  getCircularReferences(): string;
+
+  // ── Style setters ──
+
+  /** Set cell-level style from JSON. */
+  setCellStyle(row: number, col: number, styleJson: string): void;
+
+  /** Set row-level style from JSON. */
+  setRowStyle(row: number, styleJson: string): void;
+
+  /** Set column-level style from JSON. */
+  setColStyle(col: number, styleJson: string): void;
+
+  // ── Layout setters ──
+
+  /** Set column width in points. */
+  setColumnWidth(col: number, width: number): void;
+
+  /** Set row height in points. */
+  setRowHeight(row: number, height: number): void;
+
+  // ── Merge ──
+
+  /** Merge cells in the given A1 range reference (e.g. "A1:B3"). */
+  mergeCells(rangeRef: string): void;
+
+  /** Unmerge cells in the given A1 range reference. */
+  unmergeCells(rangeRef: string): void;
+
+  // ── Sheet management ──
+
+  /** Add a new worksheet with the given name. Returns the new sheet index. */
+  addSheet(name: string): number;
+
+  /** Delete the sheet at the given index. Returns false if not allowed. */
+  deleteSheet(index: number): boolean;
+
+  /** Rename the sheet at the given index. Returns false if name is duplicate. */
+  renameSheet(index: number, newName: string): boolean;
 }
 
 /**

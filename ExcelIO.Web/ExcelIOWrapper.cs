@@ -2,6 +2,8 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.JavaScript;
 using System.Text;
+using System.Text.Json;
+using ExcelIO.Formula;
 
 namespace ExcelIO;
 
@@ -10,9 +12,13 @@ public static partial class ExcelIOWrapper
     private static XlWorkbook? _workbook;
     private static int _activeSheetIndex;
     private static string _fileName = "workbook.xlsx";
+    private static FormulaEngine? _engine;
 
     private static XlWorksheet? ActiveSheet =>
         _workbook?.Worksheets.ElementAtOrDefault(_activeSheetIndex);
+
+    private static FormulaEngine Engine =>
+        _engine ??= new FormulaEngine();
 
     // ── Workbook operations ──
 
@@ -256,6 +262,198 @@ public static partial class ExcelIOWrapper
         return ArgbToCssColor(sheet.Options.TabColor);
     }
 
+    // ── Formula ──
+
+    [JSExport]
+    public static void SetCellFormula(int row, int col, string formula)
+    {
+        var sheet = ActiveSheet;
+        if (sheet is null) return;
+
+        while (sheet.Rows.Count <= row)
+            sheet.Rows.Add(new XlRow(sheet));
+
+        var r = sheet.Rows[row];
+        while (r.Cells.Count <= col)
+            r.Cells.Add(new XlCell(r));
+
+        r.Cells[col].SetFormula(formula);
+    }
+
+    [JSExport]
+    public static void CalculateSheet()
+    {
+        var sheet = ActiveSheet;
+        if (sheet is null) return;
+        Engine.Calculate(sheet);
+    }
+
+    [JSExport]
+    public static void CalculateWorkbook()
+    {
+        if (_workbook is null) return;
+        Engine.Calculate(_workbook);
+    }
+
+    [JSExport]
+    public static string GetCircularReferences()
+    {
+        var refs = Engine.CircularReferences;
+        if (refs.Count == 0) return "[]";
+
+        var sb = new StringBuilder();
+        sb.Append('[');
+        for (int i = 0; i < refs.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append("{\"path\":[");
+            var path = refs[i].Path;
+            for (int j = 0; j < path.Count; j++)
+            {
+                if (j > 0) sb.Append(',');
+                sb.Append("{\"row\":");
+                sb.Append(path[j].Row);
+                sb.Append(",\"col\":");
+                sb.Append(path[j].Col);
+                sb.Append('}');
+            }
+            sb.Append("]}");
+        }
+        sb.Append(']');
+        return sb.ToString();
+    }
+
+    // ── Style setters ──
+
+    [JSExport]
+    public static void SetCellStyle(int row, int col, string styleJson)
+    {
+        var sheet = ActiveSheet;
+        if (sheet is null) return;
+
+        while (sheet.Rows.Count <= row)
+            sheet.Rows.Add(new XlRow(sheet));
+
+        var r = sheet.Rows[row];
+        while (r.Cells.Count <= col)
+            r.Cells.Add(new XlCell(r));
+
+        var style = JsonToStyle(styleJson);
+        if (style is not null)
+            r.Cells[col].Style = style;
+    }
+
+    [JSExport]
+    public static void SetRowStyle(int row, string styleJson)
+    {
+        var sheet = ActiveSheet;
+        if (sheet is null) return;
+
+        while (sheet.Rows.Count <= row)
+            sheet.Rows.Add(new XlRow(sheet));
+
+        var style = JsonToStyle(styleJson);
+        if (style is not null)
+            sheet.Rows[row].Style = style;
+    }
+
+    [JSExport]
+    public static void SetColStyle(int col, string styleJson)
+    {
+        var sheet = ActiveSheet;
+        if (sheet is null) return;
+
+        if (!sheet.Columns.TryGetValue(col, out var colObj) || colObj is null)
+        {
+            colObj = new XlColumn();
+            sheet.Columns[col] = colObj;
+        }
+
+        var style = JsonToStyle(styleJson);
+        if (style is not null)
+            colObj.Style = style;
+    }
+
+    // ── Layout setters ──
+
+    [JSExport]
+    public static void SetColumnWidth(int col, double width)
+    {
+        var sheet = ActiveSheet;
+        if (sheet is null) return;
+
+        if (!sheet.Columns.TryGetValue(col, out var colObj) || colObj is null)
+        {
+            colObj = new XlColumn();
+            sheet.Columns[col] = colObj;
+        }
+        colObj.Width = width;
+    }
+
+    [JSExport]
+    public static void SetRowHeight(int row, double height)
+    {
+        var sheet = ActiveSheet;
+        if (sheet is null) return;
+
+        while (sheet.Rows.Count <= row)
+            sheet.Rows.Add(new XlRow(sheet));
+
+        sheet.Rows[row].Height = height;
+    }
+
+    // ── Merge cells ──
+
+    [JSExport]
+    public static void MergeCells(string rangeRef)
+    {
+        ActiveSheet?.Range(rangeRef).Merge();
+    }
+
+    [JSExport]
+    public static void UnmergeCells(string rangeRef)
+    {
+        ActiveSheet?.Range(rangeRef).Unmerge();
+    }
+
+    // ── Sheet management ──
+
+    [JSExport]
+    public static int AddSheet(string name)
+    {
+        if (_workbook is null) return -1;
+        var sheet = _workbook.NewWorksheet(name);
+        return _workbook.Worksheets.Count - 1;
+    }
+
+    [JSExport]
+    public static bool DeleteSheet(int index)
+    {
+        if (_workbook is null || index < 0 || index >= _workbook.Worksheets.Count)
+            return false;
+        if (_workbook.Worksheets.Count <= 1)
+            return false;
+
+        _workbook.Worksheets.RemoveAt(index);
+        if (_activeSheetIndex >= _workbook.Worksheets.Count)
+            _activeSheetIndex = _workbook.Worksheets.Count - 1;
+        return true;
+    }
+
+    [JSExport]
+    public static bool RenameSheet(int index, string newName)
+    {
+        if (_workbook is null || index < 0 || index >= _workbook.Worksheets.Count)
+            return false;
+
+        // Check for duplicate name
+        if (_workbook.Worksheets.Any(s => string.Equals(s.Name, newName, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        _workbook.Worksheets[index].Name = newName;
+        return true;
+    }
+
     // ── Helpers ──
 
     private static string StyleToJson(XlStyle? style)
@@ -392,4 +590,96 @@ public static partial class ExcelIOWrapper
         if (rowStyle is not null) return rowStyle;
         return colStyle;
     }
+
+    private static XlStyle? JsonToStyle(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "{}")
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var style = new XlStyle();
+
+            if (root.TryGetProperty("fontName", out var el)) style.FontName = el.GetString();
+            if (root.TryGetProperty("fontSize", out el) && el.TryGetDouble(out var d)) style.FontSize = d;
+            if (root.TryGetProperty("fontColor", out el)) style.FontColor = CssColorToArgb(el.GetString());
+            if (root.TryGetProperty("bold", out el)) style.Bold = el.GetBoolean();
+            if (root.TryGetProperty("italic", out el)) style.Italic = el.GetBoolean();
+            if (root.TryGetProperty("fillColor", out el)) style.FillColor = CssColorToArgb(el.GetString());
+
+            XlAlignment? align = null;
+            if (root.TryGetProperty("hAlign", out el) || root.TryGetProperty("vAlign", out el) || root.TryGetProperty("wrapText", out el))
+            {
+                align = new XlAlignment();
+                if (root.TryGetProperty("hAlign", out el)) align.Horizontal = ParseHAlign(el.GetString());
+                if (root.TryGetProperty("vAlign", out el)) align.Vertical = ParseVAlign(el.GetString());
+                if (root.TryGetProperty("wrapText", out el)) align.WrapText = el.GetBoolean();
+                style.Alignment = align;
+            }
+
+            // Check for border properties
+            if (root.TryGetProperty("borderLeft", out el) || root.TryGetProperty("borderRight", out el) ||
+                root.TryGetProperty("borderTop", out el) || root.TryGetProperty("borderBottom", out el))
+            {
+                var border = new XlBorder();
+                if (root.TryGetProperty("borderLeft", out el)) border.Left = ParseBorderStyle(el.GetString());
+                if (root.TryGetProperty("borderLeftColor", out el)) border.LeftColor = CssColorToArgb(el.GetString());
+                if (root.TryGetProperty("borderRight", out el)) border.Right = ParseBorderStyle(el.GetString());
+                if (root.TryGetProperty("borderRightColor", out el)) border.RightColor = CssColorToArgb(el.GetString());
+                if (root.TryGetProperty("borderTop", out el)) border.Top = ParseBorderStyle(el.GetString());
+                if (root.TryGetProperty("borderTopColor", out el)) border.TopColor = CssColorToArgb(el.GetString());
+                if (root.TryGetProperty("borderBottom", out el)) border.Bottom = ParseBorderStyle(el.GetString());
+                if (root.TryGetProperty("borderBottomColor", out el)) border.BottomColor = CssColorToArgb(el.GetString());
+                style.Border = border;
+            }
+
+            return style;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? CssColorToArgb(string? cssColor)
+    {
+        if (string.IsNullOrWhiteSpace(cssColor)) return null;
+        // "#RRGGBB" → "FFRRGGBB"
+        var hex = cssColor.TrimStart('#');
+        if (hex.Length == 6) return "FF" + hex;
+        if (hex.Length == 8) return hex; // Already ARGB
+        return "FF" + hex.PadLeft(6, '0');
+    }
+
+    private static XlHorizontalAlignment ParseHAlign(string? s) => s switch
+    {
+        "left" => XlHorizontalAlignment.Left,
+        "center" => XlHorizontalAlignment.Center,
+        "right" => XlHorizontalAlignment.Right,
+        "justify" => XlHorizontalAlignment.Justify,
+        _ => XlHorizontalAlignment.General
+    };
+
+    private static XlVerticalAlignment ParseVAlign(string? s) => s switch
+    {
+        "top" => XlVerticalAlignment.Top,
+        "middle" => XlVerticalAlignment.Center,
+        "bottom" => XlVerticalAlignment.Bottom,
+        "justify" => XlVerticalAlignment.Justify,
+        _ => XlVerticalAlignment.Bottom
+    };
+
+    private static XlBorderStyle ParseBorderStyle(string? s) => s switch
+    {
+        "thin" => XlBorderStyle.Thin,
+        "medium" => XlBorderStyle.Medium,
+        "dashed" => XlBorderStyle.Dashed,
+        "dotted" => XlBorderStyle.Dotted,
+        "thick" => XlBorderStyle.Thick,
+        "double" => XlBorderStyle.Double,
+        "hair" => XlBorderStyle.Hair,
+        _ => XlBorderStyle.None
+    };
 }
