@@ -1,0 +1,7 @@
+/bin/
+/obj/
+/native/bin/
+/native/build/
+/native/vendor/
+/smoke/bin/
+/smoke/obj/

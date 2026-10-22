@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="ExcelIO/ExcelIO.csproj" />
+  <Project Path="ExcelIO.Formula/ExcelIO.Formula.csproj" />
+  <Project Path="QuickExcel.Scripting/QuickExcel.Scripting.csproj" />
+  <Project Path="QuickExcel.Core/QuickExcel.Core.csproj" />
+  <Project Path="QuickExcel.Core.Test/QuickExcel.Core.Test.csproj" />
+  <Project Path="QuickExcel.Desktop/QuickExcel.Desktop.csproj" />
+</Solution>

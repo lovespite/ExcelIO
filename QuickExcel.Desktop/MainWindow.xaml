@@ -1,0 +1,118 @@
+<Window x:Class="QuickExcel.Desktop.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="QuickExcel" Width="1420" Height="900" MinWidth="1040" MinHeight="680"
+ WindowStartupLocation="CenterScreen" Background="#F4F7F4" FontFamily="Microsoft YaHei UI, Segoe UI"
+ FontSize="13" Foreground="{StaticResource Ink}" PreviewKeyDown="Window_KeyDown" Closing="Window_Closing">
+ <Grid Margin="24,18,24,0">
+  <Grid.RowDefinitions>
+   <RowDefinition Height="70"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="*"/>
+   <RowDefinition Height="36"/>
+  </Grid.RowDefinitions>
+  <Grid>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
+    <Border Background="#187553" Width="42" Height="42" CornerRadius="10" Margin="0,2,13,0">
+     <TextBlock Text="Q" Foreground="White" FontWeight="Bold" FontSize="28" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    </Border>
+    <StackPanel>
+     <StackPanel Orientation="Horizontal">
+      <TextBlock Text="QuickExcel" FontSize="24" FontWeight="SemiBold"/>
+      <Border Background="#E1ECE4" CornerRadius="4" Margin="12,7,0,4" Padding="6,2"><TextBlock Text="PREVIEW 0.1" FontSize="10" Foreground="#52715E"/></Border>
+     </StackPanel>
+     <TextBlock Text="表格，遇见 JavaScript。" Foreground="{StaticResource Muted}" FontSize="12" Margin="1,4,0,0"/>
+    </StackPanel>
+   </StackPanel>
+   <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,0,0">
+    <TextBlock x:Name="FileTitle" Text="示例工作簿.xlsq" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+    <TextBlock x:Name="FileSubtitle" Text="本地工作簿 · 尚未保存" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,6,0,0" HorizontalAlignment="Right"/>
+   </StackPanel>
+  </Grid>
+  <Grid Grid.Row="1" x:Name="Toolbar" Margin="0,0,0,12">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <WrapPanel>
+    <Button Content="新建" Click="New_Click" ToolTip="新建空白工作簿 · Ctrl+N"/>
+    <Button Content="打开…" Click="Open_Click" ToolTip="打开 .xlsx / .xlsq · Ctrl+O"/>
+    <Button Content="保存 .xlsq" Click="Save_Click" Style="{StaticResource Primary}" ToolTip="保存工作簿和脚本 · Ctrl+S"/>
+    <Button Content="另存为…" Click="SaveAs_Click"/>
+    <Button Content="导出 .xlsx" Click="Export_Click" ToolTip="将所有公式按当前计算结果导出，不包含脚本"/>
+    <Border Width="1" Background="#D7E1DA" Margin="7,5,14,5"/>
+    <Button x:Name="UndoButton" Content="撤销" Click="Undo_Click" ToolTip="撤销单元格编辑 · Ctrl+Z"/>
+    <Button x:Name="RedoButton" Content="重做" Click="Redo_Click" ToolTip="重做单元格编辑 · Ctrl+Y"/>
+   </WrapPanel>
+   <Button Grid.Column="1" Content="载入示例" Click="Demo_Click" Margin="0"/>
+  </Grid>
+  <Border Grid.Row="2" Background="#EAF1EB" BorderBrush="#D8E5DA" BorderThickness="1" CornerRadius="6" Padding="12,9" Margin="0,0,0,12">
+   <TextBlock x:Name="HintText" Text="开始试用：点击右侧「应用脚本并重算」，再修改价格或数量。双击单元格编辑；公式栏可查看公式。" Foreground="#47614F" TextWrapping="Wrap" FontSize="12"/>
+  </Border>
+  <Grid Grid.Row="3" x:Name="Workspace">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="490"/><ColumnDefinition Width="14"/><ColumnDefinition Width="390" MinWidth="300" MaxWidth="650"/></Grid.ColumnDefinitions>
+   <Border Background="White" CornerRadius="8" BorderBrush="#DCE5DF" BorderThickness="1" ClipToBounds="True">
+    <Grid>
+     <Grid.RowDefinitions><RowDefinition Height="50"/><RowDefinition Height="*"/><RowDefinition Height="46"/></Grid.RowDefinitions>
+     <Grid Margin="12,8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="66"/><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Border Background="#F1F5F1" CornerRadius="4"><TextBlock x:Name="CellAddress" Text="A1" FontFamily="Consolas" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+      <TextBlock Grid.Column="1" Text="ƒx" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#187553" FontSize="16"/>
+      <TextBox Grid.Column="2" x:Name="FormulaBar" BorderThickness="0" VerticalContentAlignment="Center" FontFamily="Consolas, Microsoft YaHei UI" KeyDown="FormulaBar_KeyDown" ToolTip="输入值或以 = 开头的公式，按 Enter 应用"/>
+      <Button Grid.Column="3" Content="↵" Padding="10,3" Margin="3,0,0,0" Click="ApplyCell_Click" ToolTip="应用公式栏内容"/>
+     </Grid>
+     <DataGrid Grid.Row="1" x:Name="SheetGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" CanUserSortColumns="False"
+       SelectionUnit="Cell" SelectionMode="Extended" HeadersVisibility="All" RowHeaderWidth="45" RowHeight="31" ColumnHeaderHeight="32"
+       GridLinesVisibility="All" HorizontalGridLinesBrush="#E7ECE8" VerticalGridLinesBrush="#E7ECE8" Background="White" BorderThickness="0,1,0,1" BorderBrush="#DCE5DF"
+       EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True"
+       LoadingRow="Grid_LoadingRow" CurrentCellChanged="Grid_CurrentCellChanged" PreparingCellForEdit="Grid_PreparingCellForEdit" CellEditEnding="Grid_CellEditEnding" PreviewKeyDown="Grid_KeyDown">
+      <DataGrid.Resources>
+       <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="#F3F6F3"/><Setter Property="Foreground" Value="#75847A"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="BorderThickness" Value="0,0,1,0"/><Setter Property="BorderBrush" Value="#DCE5DF"/><Setter Property="FontSize" Value="11"/></Style>
+       <Style TargetType="DataGridRowHeader"><Setter Property="Background" Value="#F3F6F3"/><Setter Property="Foreground" Value="#75847A"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="FontSize" Value="11"/></Style>
+       <Style TargetType="DataGridCell">
+        <Setter Property="BorderThickness" Value="1"/><Setter Property="BorderBrush" Value="Transparent"/>
+        <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#E3F3E9"/><Setter Property="Foreground" Value="#174D36"/><Setter Property="BorderBrush" Value="#187553"/></Trigger></Style.Triggers>
+       </Style>
+      </DataGrid.Resources>
+     </DataGrid>
+     <DockPanel Grid.Row="2" Margin="10,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+       <Button Content="＋ 行" Click="MoreRows_Click" Padding="7,3" ToolTip="再显示 100 行"/>
+       <Button Content="＋ 列" Click="MoreColumns_Click" Padding="7,3" ToolTip="再显示 8 列"/>
+       <Button Content="＋ 表" Click="AddSheet_Click" Padding="7,3" Margin="0"/>
+      </StackPanel>
+      <ComboBox x:Name="SheetPicker" MinWidth="140" MaxWidth="240" HorizontalAlignment="Left" VerticalContentAlignment="Center" SelectionChanged="SheetPicker_SelectionChanged"/>
+     </DockPanel>
+    </Grid>
+   </Border>
+   <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" Background="Transparent" ResizeBehavior="PreviousAndNext"/>
+   <Border Grid.Column="2" Background="#FCFDFB" CornerRadius="8" BorderBrush="#DCE5DF" BorderThickness="1">
+    <Grid>
+     <Grid.RowDefinitions><RowDefinition Height="62"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="160"/></Grid.RowDefinitions>
+     <Grid Margin="17,14">
+      <StackPanel><TextBlock Text="工作簿脚本" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="functions.js · 随 .xlsq 一起保存" FontSize="10" Foreground="{StaticResource Muted}" Margin="0,4,0,0"/></StackPanel>
+      <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="#E9EFE7" CornerRadius="4" Padding="6,3"><TextBlock Text="JavaScript" Foreground="#60734F" FontFamily="Consolas" FontSize="10"/></Border>
+     </Grid>
+     <TextBlock Grid.Row="1" Text="注册函数后，可在单元格公式中直接调用。" FontSize="11" Foreground="{StaticResource Muted}" Margin="17,0,17,12"/>
+     <TextBox Grid.Row="2" x:Name="ScriptEditor" AcceptsReturn="True" AcceptsTab="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Cascadia Code, Consolas" FontSize="13" Background="#F4F7F0" Foreground="#304B37" BorderThickness="0,1" BorderBrush="#E1E8DE" Padding="14" TextChanged="ScriptEditor_TextChanged" SpellCheck.IsEnabled="False"/>
+     <StackPanel Grid.Row="3" Margin="14,12">
+      <Button x:Name="RunButton" Content="▶  应用脚本并重算" Click="Run_Click" Style="{StaticResource Primary}" Margin="0,0,0,8" ToolTip="Ctrl+Enter"/>
+      <DockPanel>
+       <Button Content="停用脚本" Click="Disable_Click" Padding="8,4" FontSize="11"/>
+       <TextBlock x:Name="ScriptState" Text="● 脚本未启用" FontSize="11" Foreground="#8D7951" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+      </DockPanel>
+     </StackPanel>
+     <Border Grid.Row="4" BorderBrush="#E1E8DE" BorderThickness="0,1,0,0" Padding="14,12">
+      <Grid><Grid.RowDefinitions><RowDefinition Height="22"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+       <TextBlock Text="运行记录" FontSize="11" Foreground="{StaticResource Muted}"/>
+       <TextBox Grid.Row="1" x:Name="LogText" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" FontSize="11" FontFamily="Consolas, Microsoft YaHei UI" VerticalScrollBarVisibility="Auto" Text="就绪。脚本将在你点击应用后执行。"/>
+      </Grid>
+     </Border>
+    </Grid>
+   </Border>
+  </Grid>
+  <DockPanel Grid.Row="4" LastChildFill="True">
+   <TextBlock x:Name="SelectionText" DockPanel.Dock="Right" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center"/>
+   <TextBlock x:Name="StatusText" Text="就绪" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center"/>
+  </DockPanel>
+ </Grid>
+</Window>
